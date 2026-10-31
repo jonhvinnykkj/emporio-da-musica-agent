@@ -61,6 +61,7 @@ class Turn:
     guard_fired: bool = False
     input_tokens: int = 0
     cached_tokens: int = 0
+    cache_write_tokens: int = 0
     output_tokens: int = 0
     seconds: float = 0.0
 
@@ -181,6 +182,7 @@ class Agent:
         )
         turn.input_tokens += response.usage.input_tokens
         turn.cached_tokens += response.usage.cache_read_input_tokens or 0
+        turn.cache_write_tokens += getattr(response.usage, "cache_creation_input_tokens", 0) or 0
         turn.output_tokens += response.usage.output_tokens
         return response
 

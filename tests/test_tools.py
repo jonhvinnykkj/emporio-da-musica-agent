@@ -225,5 +225,6 @@ def test_campo_grande_is_recognised_in_common_spellings(box, city):
 
 
 def test_a_similar_city_name_is_another_city(box):
-    result, _ = call(box, "calcular_compra", itens=[{"produto_id": 116, "quantidade": 1}], cidade="Campo Grandeza")
+    items = [{"produto_id": 116, "quantidade": 1}]
+    result, _ = call(box, "calcular_compra", itens=items, cidade="Campo Grandeza")
     assert "total_com_frete" not in result

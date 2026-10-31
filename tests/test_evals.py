@@ -2,7 +2,9 @@
 
 import json
 import re
+import shutil
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -39,9 +41,9 @@ class TestFailures:
 
 
 class TestCases:
-    def test_there_are_twenty_with_unique_ids(self):
-        assert len(CASES) == 20
-        assert len({case.id for case in CASES}) == 20
+    def test_there_are_twenty_scenarios_plus_the_split_02b_with_unique_ids(self):
+        assert len(CASES) == 21
+        assert len({case.id for case in CASES}) == 21
 
     def test_clocks_match_the_scenarios(self):
         by_id = {case.id: case for case in CASES}
@@ -77,7 +79,7 @@ class TestEvaluate:
         assert results[0].passed and results[0].passed_rounds == 2
         assert lines == ["PASS  01_store_address  2/2"]
         assert len(client.requests) == 2
-        assert spend.tokens == [20, 6, 10]
+        assert spend.tokens == [20, 6, 10, 0]
 
     def test_a_wrong_answer_fails_the_round_and_shows_the_answer(self, data):
         case = next(c for c in CASES if c.id == "01_store_address")
@@ -157,13 +159,13 @@ class TestMain:
         code = run.main(["--rounds", "1", "--only", "01_store_address"], client_factory=lambda: client)
         assert code == 1
         assert "FAIL  01_store_address" in capsys.readouterr().out
-        assert not (arena / "evals" / "results.md").exists()
+        assert not (arena / "evals" / "results" / "principal.md").exists()
 
     def test_full_run_writes_results(self, arena, monkeypatch):
         monkeypatch.setattr(run, "CASES", [Case("only", ("oi",))])
         client = FakeClient(response(text_block("oi")))
         assert run.main(["--rounds", "1"], client_factory=lambda: client) == 0
-        written = (arena / "evals" / "results.md").read_text(encoding="utf-8")
+        written = (arena / "evals" / "results" / "principal.md").read_text(encoding="utf-8")
         assert "1/1 cases passed" in written and "| only | 1/1 |" in written
 
     def test_budget_exhaustion_returns_1_and_writes_nothing(self, arena, monkeypatch, capsys):
@@ -173,7 +175,7 @@ class TestMain:
         code = run.main(["--rounds", "3", "--budget", "0.1"], client_factory=lambda: FakeClient(big))
         assert code == 1
         assert "Orçamento" in capsys.readouterr().err
-        assert not (arena / "evals" / "results.md").exists()
+        assert not (arena / "evals" / "results" / "principal.md").exists()
 
 
 class TestRedTeam:
@@ -263,3 +265,110 @@ class TestBurst:
     def test_percentile(self):
         assert burst.percentile([1.0, 2.0, 3.0, 4.0, 100.0], 0.95) == 100.0
         assert burst.percentile([5.0], 0.95) == 5.0
+
+
+def case_by_id(case_id: str) -> Case:
+    return next(case for case in CASES if case.id == case_id)
+
+
+class TestHolidayAndOpenCases:
+    holiday = case_by_id("03_closed_before_holiday")
+
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            "Hoje estamos fechados. Segunda é feriado, abrimos terça às 9h.",
+            "Segunda-feira (02/11) é feriado de Finados, então voltamos na terça às 9h.",
+        ],
+    )
+    def test_saying_monday_is_a_holiday_is_not_a_failure(self, answer):
+        assert run.failures(self.holiday, [turn(answer)]) == []
+
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            "Fechamos agora e abrimos segunda às 9h. Terça também estamos aqui.",
+            "Abrimos na segunda-feira, terça também.",
+            "Voltamos segunda (02/11), às 9h. Terça também.",
+        ],
+    )
+    def test_saying_the_store_opens_monday_still_fails(self, answer):
+        assert any(p.startswith("forbidden") for p in run.failures(self.holiday, [turn(answer)]))
+
+    def test_saturday_morning_case_expects_open_until_one(self):
+        case = case_by_id("02b_open_saturday_morning")
+        assert case.now == datetime(2026, 10, 24, 10, 0)
+        assert run.failures(case, [turn("Sim, estamos abertos até as 13h!")]) == []
+        assert run.failures(case, [turn("Estamos fechados agora.")]) != []
+
+
+class TestCacheWriteCost:
+    def test_cache_writes_cost_125_percent_of_input(self):
+        t = [turn("x", cache_write_tokens=1_000_000)]
+        assert run.cost_usd("claude-haiku-5-5", t) == pytest.approx(0.125)
+
+    def test_agent_reads_cache_creation_tokens_from_usage(self, data):
+        from emporio.agent import Agent
+
+        reply = response(text_block("ok"))
+        reply.usage.cache_creation_input_tokens = 7
+        agent = Agent(FakeClient(reply), data, MemoryJournal(), clock=lambda: datetime(2026, 10, 28, 14, 0))
+        assert agent.reply(agent.new_session(), "oi").cache_write_tokens == 7
+
+
+class TestResultFiles:
+    @pytest.fixture
+    def root(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(run, "ROOT", tmp_path)
+        return tmp_path
+
+    def test_each_suite_writes_its_own_file(self, root):
+        run.write_results("principal", "## A")
+        run.write_results("redteam", "## B")
+        assert "## A" in (root / "evals" / "results" / "principal.md").read_text(encoding="utf-8")
+        assert "## B" in (root / "evals" / "results" / "redteam.md").read_text(encoding="utf-8")
+
+    def test_partial_runs_are_marked(self, root):
+        path = run.write_results("principal", "## A", partial=True)
+        assert "PARTIAL" in path.read_text(encoding="utf-8")
+        assert "PARTIAL" not in run.write_results("principal", "## A").read_text(encoding="utf-8")
+
+    def test_headline_does_not_depend_on_summary_layout(self):
+        spend = run.Spend(1.0)
+        spend.charge("claude-haiku-5-5", [turn("x", input_tokens=10, cache_write_tokens=4, output_tokens=2)])
+        line = run.headline([], spend, "m", "low")
+        assert "0/0 cases" in line and "4 cache write" in line
+
+
+class TestPartialRuns:
+    @pytest.fixture
+    def arena(self, tmp_path, monkeypatch, data):
+        (tmp_path / ".env").write_text("ANTHROPIC_API_KEY=fake-key-for-tests\n", encoding="utf-8")
+        monkeypatch.setattr(run, "ROOT", tmp_path)
+        monkeypatch.setattr(redteam, "ROOT", tmp_path)
+        monkeypatch.setattr(burst, "ROOT", tmp_path)
+        monkeypatch.setattr(StoreData, "load", classmethod(lambda cls, _: data))
+        shutil.copytree(Path(__file__).resolve().parents[1] / "data", tmp_path / "data")
+        return tmp_path
+
+    def test_budget_stop_keeps_the_finished_cases_as_partial(self, arena, monkeypatch):
+        monkeypatch.setattr(run, "CASES", [Case("first", ("oi",)), Case("second", ("oi",))])
+        big = response(text_block("oi"))
+        big.usage.output_tokens = 1_000_000
+        client = FakeClient(response(text_block("oi")), big)
+        assert run.main(["--rounds", "1", "--budget", "0.1"], client_factory=lambda: client) == 1
+        written = (arena / "evals" / "results" / "principal.md").read_text(encoding="utf-8")
+        assert "PARTIAL" in written and "| first |" in written
+
+    def test_red_team_budget_stop_saves_partial(self, arena):
+        big = response(text_block("Posso ajudar com instrumentos."))
+        big.usage.output_tokens = 1_000_000
+        client = FakeClient(big)
+        assert redteam.main(["--budget", "0.1"], client_factory=lambda: client) == 1
+        assert "PARTIAL" in (arena / "evals" / "results" / "redteam.md").read_text(encoding="utf-8")
+
+    def test_burst_writes_its_own_file(self, arena):
+        client = FakeClient(*[response(text_block("Certo.")) for _ in range(20)])
+        assert burst.main([], client_factory=lambda: client) == 0
+        assert (arena / "evals" / "results" / "burst.md").exists()
+        assert not (arena / "evals" / "results" / "principal.md").exists()

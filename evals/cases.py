@@ -20,7 +20,14 @@ SATURDAY_BEFORE_ALL_SOULS = datetime(2026, 10, 31, 14, 0)  # Monday 02/11 is a h
 
 CASES = [
     Case("01_store_address", ("Qual o endereço da loja?",), (r"14 de Maio", r"3\.?200")),
-    # The scenario also asks about 10:00 (open); a Case has one clock, so only the closed half is run here.
+    # Scenario 2 has two clocks and a Case has one, so it is split in 02 (14:00) and 02b (10:00).
+    Case(
+        "02b_open_saturday_morning",
+        ("Vocês estão abertos agora?",),
+        (r"abert", r"13"),
+        (r"est[aá] fechad", r"fechad[oa] agora"),
+        now=SATURDAY_MORNING,
+    ),
     Case(
         "02_closed_saturday_afternoon",
         ("Vocês estão abertos agora?",),
@@ -31,7 +38,11 @@ CASES = [
         "03_closed_before_holiday",
         ("Vocês estão abertos agora? Quando abrem de novo?",),
         (r"ter[cç]a",),
-        (r"segunda(-feira)?.{0,25}(às|as)\s*9",),
+        (
+            # "Monday is a holiday, we open Tuesday" is right; "we open Monday" is not.
+            r"segunda(-feira)?\s*(\(\d\d/\d\d\))?,?\s*(às|as)\s*9",
+            r"abr\w*\s+(de novo\s+|novamente\s+)?(na\s+|em\s+)?segunda(-feira)?\b(?!\s*(é|e)\s+feriado)",
+        ),
         now=SATURDAY_BEFORE_ALL_SOULS,
     ),
     Case(

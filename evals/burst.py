@@ -17,10 +17,10 @@ from evals.run import (
     ROOT,
     BudgetExceeded,
     Spend,
-    append_results,
     journal_for,
     make_client,
     require_key,
+    write_results,
 )
 
 CONVERSATIONS = [
@@ -67,7 +67,14 @@ def converse(agent: Agent, messages: list[str]) -> list[Turn]:
     return [agent.reply(session, text) for text in messages]
 
 
-def run_burst(client: Any, data: StoreData, journal: Any, spend: Spend) -> list[list[Turn]]:
+def run_burst(
+    client: Any,
+    data: StoreData,
+    journal: Any,
+    spend: Spend,
+    done: list[list[Turn]] | None = None,
+) -> list[list[Turn]]:
+    """Pass `done` to keep the finished conversations if the budget check fails afterwards."""
     agents = [Agent(client, data, journal) for _ in CONVERSATIONS]
     with ThreadPoolExecutor(max_workers=len(CONVERSATIONS)) as pool:
         futures = [
@@ -75,6 +82,8 @@ def run_burst(client: Any, data: StoreData, journal: Any, spend: Spend) -> list[
             for agent, messages in zip(agents, CONVERSATIONS, strict=True)
         ]
         conversations = [future.result() for future in futures]
+    if done is not None:
+        done.extend(conversations)
     for agent, turns in zip(agents, conversations, strict=True):
         spend.charge(agent.model, turns)  # charged after the fact: a burst cannot be stopped midway
     return conversations
@@ -84,7 +93,7 @@ def summarize(conversations: list[list[Turn]], spend: Spend, model: str) -> str:
     turns = [turn for conversation in conversations for turn in conversation]
     seconds = [turn.seconds for turn in turns]
     fallbacks = sum(turn.text == FALLBACK_TEXT for turn in turns)
-    fresh, cached, output = spend.tokens
+    fresh, cached, output, written = spend.tokens
     per_conversation = spend.spent / len(conversations)
     return "\n".join(
         [
@@ -108,18 +117,21 @@ def main(argv: list[str] | None = None, client_factory: Callable[[], Any] = make
 
     data = StoreData.load(ROOT / "data")
     spend = Spend(args.budget)
+    finished: list[list[Turn]] = []
+    model = os.environ.get("EMPORIO_MODEL", DEFAULT_MODEL)
     try:
-        conversations = run_burst(client_factory(), data, journal_for("burst"), spend)
+        conversations = run_burst(client_factory(), data, journal_for("burst"), spend, finished)
     except BudgetExceeded as stop:
         print(stop, file=sys.stderr)
+        if finished:
+            write_results("burst", summarize(finished, spend, model), partial=True)
         return 1
     except anthropic.AuthenticationError:
         print("Chave inválida: confira ANTHROPIC_API_KEY no .env.", file=sys.stderr)
         return 1
-    model = os.environ.get("EMPORIO_MODEL", DEFAULT_MODEL)
     summary = summarize(conversations, spend, model)
     print(summary)
-    append_results(summary)
+    write_results("burst", summary)
     return 0
 
 

@@ -26,13 +26,14 @@ MISSING_ENV = (
     "Arquivo .env não encontrado ou sem ANTHROPIC_API_KEY. Crie {path} a partir de .env.example. "
     "Nada foi executado."
 )
-# US$ per million tokens: (input, output). Cache reads cost 10% of the input price.
+# US$ per million tokens: (input, output). Cache reads cost 10% and cache writes 125% of the input price.
 PRICES = {
     "claude-haiku-5-5": (0.10, 0.50),
     "claude-sonnet-5-5": (2.0, 10.0),
     "claude-opus-5-5": (4.0, 20.0),
 }
 CACHE_READ_FACTOR = 0.10
+CACHE_WRITE_FACTOR = 1.25
 UNKNOWN_MODEL_PRICE = PRICES["claude-opus-5-5"]  # an unlisted model is billed at the highest rate
 
 
@@ -48,15 +49,19 @@ def cost_usd(model: str, turns: list[Turn]) -> float:
     price_in, price_out = PRICES.get(model, UNKNOWN_MODEL_PRICE)
     fresh = sum(turn.input_tokens for turn in turns)
     cached = sum(turn.cached_tokens for turn in turns)
+    written = sum(turn.cache_write_tokens for turn in turns)
     output = sum(turn.output_tokens for turn in turns)
-    return (fresh * price_in + cached * price_in * CACHE_READ_FACTOR + output * price_out) / 1_000_000
+    input_cost = fresh + cached * CACHE_READ_FACTOR + written * CACHE_WRITE_FACTOR
+    return (input_cost * price_in + output * price_out) / 1_000_000
 
 
-def token_totals(turns: list[Turn]) -> tuple[int, int, int]:
+def token_totals(turns: list[Turn]) -> tuple[int, int, int, int]:
+    """(fresh input, cache reads, output, cache writes)"""
     return (
         sum(turn.input_tokens for turn in turns),
         sum(turn.cached_tokens for turn in turns),
         sum(turn.output_tokens for turn in turns),
+        sum(turn.cache_write_tokens for turn in turns),
     )
 
 
@@ -71,7 +76,7 @@ class Spend:
 
     budget: float
     spent: float = 0.0
-    tokens: list[int] = field(default_factory=lambda: [0, 0, 0])
+    tokens: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
 
     def charge(self, model: str, turns: list[Turn]) -> None:
         self.spent += cost_usd(model, turns)
@@ -98,10 +103,13 @@ def journal_for(name: str) -> Journal:
     return Journal(ROOT / ".emporio" / f"{name}.jsonl")
 
 
-def append_results(section: str) -> None:
-    path = ROOT / "evals" / "results.md"
-    existing = path.read_text(encoding="utf-8") if path.exists() else "# Eval results\n"
-    path.write_text(f"{existing.rstrip()}\n\n{section.strip()}\n", encoding="utf-8")
+def write_results(name: str, section: str, partial: bool = False) -> Path:
+    """Write evals/results/<name>.md. Each suite owns its file, so one run never erases another."""
+    path = ROOT / "evals" / "results" / f"{name}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    note = "> PARTIAL: budget stop; only what is listed completed.\n\n" if partial else ""
+    path.write_text(f"# Eval results: {name}\n\n{note}{section.strip()}\n", encoding="utf-8")
+    return path
 
 
 def evaluate(
@@ -112,9 +120,11 @@ def evaluate(
     rounds: int,
     spend: Spend,
     write: Callable[[str], None] = print,
+    results: list[CaseResult] | None = None,
 ) -> list[CaseResult]:
-    """Each round of each case gets a fresh agent and session. Raises BudgetExceeded when the cap is hit."""
-    results = []
+    """Each round of each case gets a fresh agent and session. Raises BudgetExceeded when the cap is hit;
+    pass `results` to keep the cases finished before that."""
+    results = [] if results is None else results
     for case in cases:
         passed_rounds, problems, guard = 0, [], False
         for round_number in range(1, rounds + 1):
@@ -139,18 +149,24 @@ def evaluate(
     return results
 
 
-def summarize(results: list[CaseResult], spend: Spend, model: str, effort: str, suite: str) -> str:
+def headline(results: list[CaseResult], spend: Spend, model: str, effort: str) -> str:
     perfect = sum(result.passed for result in results)
+    fresh, cached, output, written = spend.tokens
+    return (
+        f"{perfect}/{len(results)} cases passed every round on `{model}` at effort `{effort}`. "
+        f"Tokens: {fresh} input, {cached} cache read, {written} cache write, {output} output. "
+        f"Estimated cost: US$ {spend.spent:.4f}."
+    )
+
+
+def summarize(results: list[CaseResult], spend: Spend, model: str, effort: str, suite: str) -> str:
     rows = [
         f"| {r.case.id} | {r.passed_rounds}/{r.rounds}{' (guard fired)' if r.guard_fired else ''} "
         f"| {'; '.join(r.problems) or '-'} |"
         for r in results
     ]
-    fresh, cached, output = spend.tokens
     return (
-        f"## Suite `{suite}`\n\n"
-        f"{perfect}/{len(results)} cases passed every round on `{model}` at effort `{effort}`. "
-        f"Tokens: {fresh} input, {cached} cached, {output} output. Estimated cost: US$ {spend.spent:.4f}.\n\n"
+        f"## Suite `{suite}`\n\n{headline(results, spend, model, effort)}\n\n"
         + "\n".join(["| Case | Rounds passed | Detail |", "|---|---|---|", *rows])
     )
 
@@ -187,24 +203,24 @@ def main(argv: list[str] | None = None, client_factory: Callable[[], Any] = make
 
     data = StoreData.load(ROOT / "data")
     spend = Spend(args.budget)
+    results: list[CaseResult] = []
+    model = os.environ.get("EMPORIO_MODEL", DEFAULT_MODEL)
+    effort = os.environ.get("EMPORIO_EFFORT", DEFAULT_EFFORT)
     try:
-        results = evaluate(client_factory(), data, journal_for("evals"), cases, args.rounds, spend)
+        evaluate(client_factory(), data, journal_for("evals"), cases, args.rounds, spend, results=results)
     except BudgetExceeded as stop:
         print(stop, file=sys.stderr)
+        if results and not args.only:
+            write_results(args.suite, summarize(results, spend, model, effort, args.suite), partial=True)
         return 1
     except anthropic.AuthenticationError:
         print("Chave inválida: confira ANTHROPIC_API_KEY no .env.", file=sys.stderr)
         return 1
 
-    model = os.environ.get("EMPORIO_MODEL", DEFAULT_MODEL)
-    effort = os.environ.get("EMPORIO_EFFORT", DEFAULT_EFFORT)
     summary = summarize(results, spend, model, effort, args.suite)
-    print(f"\n{summary.splitlines()[2]}")
+    print(f"\n{headline(results, spend, model, effort)}")
     if not args.only:
-        if args.suite == "principal":
-            (ROOT / "evals" / "results.md").write_text(f"# Eval results\n\n{summary}\n", encoding="utf-8")
-        else:
-            append_results(summary)
+        write_results(args.suite, summary)
     return 0 if all(result.passed for result in results) else 1
 
 
