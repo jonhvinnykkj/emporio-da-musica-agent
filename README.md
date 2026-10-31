@@ -111,7 +111,7 @@ Where a rule comes from the manual, the section is cited. Evidence for the rest 
 | 136 is discontinued with 13 in stock | `available = status == "active" and stock > 0`. Status wins |
 | 113 is discontinued with stock 0. 96 is active with stock 0 | Same rule |
 | 130 is `coming_soon` with stock 2 and appears in two orders | Unavailable. No date promised. Past orders are not recalculated |
-| 20 of 25 promotion rows are inactive, some for the same product | Only `is_active = 1` counts. The 4 active ones do not collide |
+| 21 of 25 promotion rows are inactive, some for the same product | Only `is_active = 1` counts. The 4 active ones do not collide |
 | The assignment's own example, the Takamine GD20, has an inactive 12% promotion | R$ 2,199.00, no discount |
 | Ohana CK-20 with 20% falls to R$ 439.20, under the free-shipping line | Free shipping is judged on the final value (D6) |
 
