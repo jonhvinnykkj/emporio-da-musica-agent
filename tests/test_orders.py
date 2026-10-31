@@ -19,14 +19,22 @@ def replace(order, **changes):
 
 @pytest.mark.parametrize(
     "contact",
-    ["(67) 99654-7821", "67996547821", "5567996547821", "99654-7821", "anacarol.ferreira@coldmail.com",
-     " ANACAROL.FERREIRA@coldmail.com "],
+    [
+        "(67) 99654-7821",
+        "67996547821",
+        "5567996547821",
+        "99654-7821",
+        "anacarol.ferreira@coldmail.com",
+        " ANACAROL.FERREIRA@coldmail.com ",
+    ],
 )
 def test_contact_on_file_unlocks_the_order(book, contact):
     assert book.verified_order(8, contact).id == 8
 
 
-@pytest.mark.parametrize("contact", ["(67) 99812-3456", "lucas.mendes@jmail.com", "", "7821", "Ana Carolina Ferreira"])
+@pytest.mark.parametrize(
+    "contact", ["(67) 99812-3456", "lucas.mendes@jmail.com", "", "7821", "Ana Carolina Ferreira"]
+)
 def test_someone_else_or_partial_data_does_not_unlock(book, contact):
     assert book.verified_order(8, contact) is None
 
@@ -89,8 +97,13 @@ def test_defect_after_legal_warranty_offers_manufacturer_route(book):
 
 
 def test_shipped_order_waits_for_receipt(book):
-    assert book.return_decision(book.orders[8], "arrependimento", TODAY)["proximo_passo"] == "aguardar_recebimento"
+    assert (
+        book.return_decision(book.orders[8], "arrependimento", TODAY)["proximo_passo"]
+        == "aguardar_recebimento"
+    )
 
 
 def test_unshipped_order_has_no_manual_rule_so_it_goes_to_the_team(book):
-    assert book.return_decision(book.orders[11], "arrependimento", TODAY)["proximo_passo"] == "encaminhar_equipe"
+    assert (
+        book.return_decision(book.orders[11], "arrependimento", TODAY)["proximo_passo"] == "encaminhar_equipe"
+    )

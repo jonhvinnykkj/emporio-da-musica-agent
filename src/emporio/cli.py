@@ -48,14 +48,16 @@ def main() -> None:
         try:
             turn = agent.reply(session_id, text)
         except anthropic.AuthenticationError:
-            raise SystemExit(MISSING_KEY)
+            raise SystemExit(MISSING_KEY) from None
         except TypeError as error:
             # The SDK raises TypeError, not an API error, when it finds no credential at all.
             if "authentication" not in str(error):
                 raise
-            raise SystemExit(MISSING_KEY)
+            raise SystemExit(MISSING_KEY) from None
         except anthropic.APIError as error:
-            print(f"Tom: Estou com instabilidade agora, tenta de novo em instantes. ({type(error).__name__})\n")
+            print(
+                f"Tom: Estou com instabilidade agora, tenta de novo em instantes. ({type(error).__name__})\n"
+            )
             continue
         if args.trace:
             print_trace(turn)

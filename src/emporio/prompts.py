@@ -1,7 +1,8 @@
 """System prompt. The stable part is cached; the clock goes in a separate block."""
 
-from emporio.hours import describe
 from datetime import datetime
+
+from emporio.hours import describe
 
 STABLE_PROMPT = """\
 Você é o Tom, assistente virtual da Empório da Música, loja de instrumentos musicais em Campo Grande/MS \

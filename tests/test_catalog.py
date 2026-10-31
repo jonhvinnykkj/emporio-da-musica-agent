@@ -1,4 +1,13 @@
-from emporio.catalog import COMING_SOON, DISCONTINUED, OUT_OF_STOCK, description_contradicts_name
+import pytest
+
+from emporio.catalog import (
+    COMING_SOON,
+    DISCONTINUED,
+    OUT_OF_STOCK,
+    Catalog,
+    DataError,
+    description_contradicts_name,
+)
 
 
 def names(result):
@@ -62,9 +71,12 @@ def test_empty_categories_are_reported(catalog):
 
 
 def test_description_from_another_brand_is_hidden_and_not_searched(catalog):
-    assert description_contradicts_name("Music Man Bass 1X Electric Bass", "Contrabaixo elétrico Fender Jazz Bass")
+    assert description_contradicts_name(
+        "Music Man Bass 1X Electric Bass", "Contrabaixo elétrico Fender Jazz Bass"
+    )
     assert not catalog.products[135].description_reliable
-    assert "descricao" not in catalog.products[135].to_dict()
+    data = catalog.products[135].to_dict()
+    assert "descricao" not in data and "especificacoes" not in data
     assert catalog.search(query="fender", category="Baixos")["produtos"] == []
 
 
@@ -73,18 +85,59 @@ def test_consistent_descriptions_stay(catalog):
     assert catalog.products[141].description_reliable
 
 
-def test_active_promotions(catalog):
-    report = catalog.promotions_report()
-    assert {item["id"] for item in report["promocoes_ativas"]} == {90, 94, 121, 127}
-
-
-def test_expired_campaign_is_reported(catalog):
-    report = catalog.promotions_report("black friday")
-    assert report["promocoes_ativas"] == []
-    assert report["campanhas_encerradas"] == ["Black Friday"]
-
-
 def test_overview_flags_categories_without_items(catalog):
     overview = catalog.overview()
     assert "Cordas Orquestrais: nenhum item" in overview
     assert "Violões: 33 modelos" in overview
+
+
+def test_list_shows_five_and_reports_the_total(catalog):
+    result = catalog.search(category="Violões", max_price=1000)
+    assert (result["total_encontrado"], result["mostrando"]) == (12, 5)
+    assert len(result["produtos"]) == 5
+
+
+def test_on_sale_lists_the_four_active_promotions(catalog):
+    result = catalog.search(on_sale=True, limit=50)
+    assert {item["id"] for item in result["produtos"]} == {90, 94, 121, 127}
+    assert all(item["promocao_ativa"] for item in result["produtos"])
+
+
+def test_every_item_says_if_a_promotion_is_active(catalog):
+    item = catalog.search(query="takamine gd20")["produtos"][0]
+    assert item["promocao_ativa"] is False
+
+
+def test_flagged_product_hides_description_and_specs(catalog):
+    data = catalog.products[135].to_dict()
+    assert "descricao" not in data and "especificacoes" not in data
+    assert "nota_interna" in data
+
+
+def test_inverted_price_range_is_empty(catalog):
+    assert catalog.search(min_price=1000, max_price=500)["total_encontrado"] == 0
+
+
+def test_nonsense_query_finds_nothing(catalog):
+    assert catalog.search(query="xyzzy")["correspondencia"] == "nenhuma"
+
+
+def test_missing_file_names_the_file(tmp_path):
+    with pytest.raises(DataError, match="categories.csv"):
+        Catalog(tmp_path)
+
+
+def test_missing_column_names_file_and_column(tmp_path, data_dir):
+    for source in data_dir.glob("*.csv"):
+        (tmp_path / source.name).write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "categories.csv").write_text("category_id,title\n1,Guitarras\n", encoding="utf-8")
+    with pytest.raises(DataError, match="categories.csv.*name"):
+        Catalog(tmp_path)
+
+
+def test_invalid_value_names_the_file(tmp_path, data_dir):
+    for source in data_dir.glob("*.csv"):
+        (tmp_path / source.name).write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "categories.csv").write_text("category_id,name\nabc,Guitarras\n", encoding="utf-8")
+    with pytest.raises(DataError, match="categories.csv"):
+        Catalog(tmp_path)

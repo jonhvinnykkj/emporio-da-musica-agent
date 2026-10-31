@@ -54,7 +54,9 @@ class Store:
                 [(session_id, "user", user_text), (session_id, "assistant", assistant_text)],
             )
 
-    def create_ticket(self, session_id: str, kind: str, summary: str, contact: str | None, order_id: int | None) -> str:
+    def create_ticket(
+        self, session_id: str, kind: str, summary: str, contact: str | None, order_id: int | None
+    ) -> str:
         with self.db:
             cursor = self.db.execute(
                 "INSERT INTO tickets (session_id, kind, summary, contact, order_id) VALUES (?, ?, ?, ?, ?)",
@@ -67,5 +69,7 @@ class Store:
             self.db.execute("INSERT INTO failed_checks (session_id) VALUES (?)", (session_id,))
 
     def failed_checks(self, session_id: str) -> int:
-        row = self.db.execute("SELECT COUNT(*) FROM failed_checks WHERE session_id = ?", (session_id,)).fetchone()
+        row = self.db.execute(
+            "SELECT COUNT(*) FROM failed_checks WHERE session_id = ?", (session_id,)
+        ).fetchone()
         return row[0]

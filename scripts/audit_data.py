@@ -38,8 +38,15 @@ def main() -> None:
             print(f"  order {order.id}: total={order.total}, items={computed}")
 
     print("Orders paid by PIX without the 5% discount:")
-    print(" ", [o.id for o in book.orders.values() if o.payment_method == "pix" and o.total == sum(
-        catalog.products[pid].list_price * qty for pid, qty in o.items)])
+    print(
+        " ",
+        [
+            o.id
+            for o in book.orders.values()
+            if o.payment_method == "pix"
+            and o.total == sum(catalog.products[pid].list_price * qty for pid, qty in o.items)
+        ],
+    )
 
     print("Orders above the installment limit of section 3.1:")
     for order in book.orders.values():

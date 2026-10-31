@@ -1,8 +1,10 @@
 from decimal import Decimal
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
-from emporio.pricing import brl, max_installments, metro_shipping, quote
+from emporio.pricing import INSTALLMENT_TIERS, brl, max_installments, metro_shipping, quote
 
 
 @pytest.mark.parametrize(
@@ -16,12 +18,12 @@ def test_brl_uses_brazilian_format(value, expected):
 @pytest.mark.parametrize(
     "amount, expected",
     [
-        ("90", 1),       # 2x would be R$ 45, under the R$ 50 floor
-        ("159.90", 3),   # 3x = R$ 53,30
-        ("240", 3),      # 4x = R$ 60, under the R$ 80 floor of the 4x-6x tier
-        ("599.90", 6),   # 6x = R$ 99,98 passes; 7x needs R$ 100
-        ("1000", 10),    # 10x is exactly the R$ 100 floor
-        ("1199", 11),    # 12x = R$ 99,92 falls short
+        ("90", 1),  # 2x would be R$ 45, under the R$ 50 floor
+        ("159.90", 3),  # 3x = R$ 53,30
+        ("240", 3),  # 4x = R$ 60, under the R$ 80 floor of the 4x-6x tier
+        ("599.90", 6),  # 6x = R$ 99,98 passes; 7x needs R$ 100
+        ("1000", 10),  # 10x is exactly the R$ 100 floor
+        ("1199", 11),  # 12x = R$ 99,92 falls short
         ("2199", 12),
     ],
 )
@@ -49,3 +51,10 @@ def test_promotion_shows_original_price_and_percent():
 @pytest.mark.parametrize("subtotal, fee", [("499.99", "35"), ("500", "0"), ("500.01", "0")])
 def test_metro_shipping(subtotal, fee):
     assert metro_shipping(Decimal(subtotal)) == Decimal(fee)
+
+
+@given(st.decimals(min_value="0.01", max_value="100000", places=2))
+def test_installment_never_goes_below_the_floor(amount):
+    count = max_installments(amount)
+    floor = next(value for limit, value in INSTALLMENT_TIERS if count <= limit)
+    assert count == 1 or amount / count >= floor

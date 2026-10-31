@@ -56,7 +56,9 @@ def main() -> None:
     print(f"\n{summary}")
     if not args.only:
         table = "\n".join(["| Case | Result | Detail |", "|---|---|---|", *rows])
-        (ROOT / "evals" / "results.md").write_text(f"# Eval results\n\n{summary}\n\n{table}\n", encoding="utf-8")
+        (ROOT / "evals" / "results.md").write_text(
+            f"# Eval results\n\n{summary}\n\n{table}\n", encoding="utf-8"
+        )
 
 
 if __name__ == "__main__":

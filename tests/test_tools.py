@@ -25,7 +25,9 @@ def call(box, name, **arguments):
 
 
 def test_every_tool_has_a_handler(box, data):
-    assert {tool["name"] for tool in tool_definitions(list(data.catalog.categories.values()))} == set(box.handlers)
+    assert {tool["name"] for tool in tool_definitions(list(data.catalog.categories.values()))} == set(
+        box.handlers
+    )
 
 
 def test_order_needs_the_right_contact(box):
@@ -35,9 +37,10 @@ def test_order_needs_the_right_contact(box):
 
 
 def test_missing_order_and_wrong_contact_get_the_same_answer(box):
-    assert call(box, "get_order", order_id=999, contact=ANA_PHONE)[0] == call(
-        box, "get_order", order_id=8, contact="(67) 90000-0000"
-    )[0]
+    assert (
+        call(box, "get_order", order_id=999, contact=ANA_PHONE)[0]
+        == call(box, "get_order", order_id=8, contact="(67) 90000-0000")[0]
+    )
 
 
 def test_session_locks_after_repeated_failures(box):
@@ -49,10 +52,12 @@ def test_session_locks_after_repeated_failures(box):
 
 def test_quote_mixes_promotional_and_regular_items(box):
     result, _ = call(
-        box, "quote_order", items=[{"product_id": 81, "quantity": 2}, {"product_id": 121, "quantity": 1}],
+        box,
+        "quote_order",
+        items=[{"product_id": 81, "quantity": 2}, {"product_id": 121, "quantity": 1}],
         city="Campo Grande",
     )
-    assert result["subtotal"] == "R$ 1.639,00"    # 599.90 x 2 + 439.20
+    assert result["subtotal"] == "R$ 1.639,00"  # 599.90 x 2 + 439.20
     assert result["total_no_pix"] == "R$ 1.579,01"  # PIX only on the two regular items
     assert result["frete"] == "Grátis"
 
@@ -69,7 +74,9 @@ def test_quote_does_not_invent_shipping_for_other_cities(box):
 
 
 def test_quote_rejects_quantity_above_stock_and_items_not_for_sale(box):
-    result, _ = call(box, "quote_order", items=[{"product_id": 93, "quantity": 3}, {"product_id": 130, "quantity": 1}])
+    result, _ = call(
+        box, "quote_order", items=[{"product_id": 93, "quantity": 3}, {"product_id": 130, "quantity": 1}]
+    )
     assert len(result["problemas"]) == 2 and result["itens"] == []
 
 
@@ -89,9 +96,12 @@ def test_bad_arguments_come_back_as_an_error(box):
 
 
 def test_no_tool_exposes_customer_contact_data(box, data):
-    output = json.dumps([
-        call(box, "get_order", order_id=8, contact=ANA_PHONE)[0],
-        call(box, "check_return", order_id=8, contact=ANA_PHONE, reason="defeito")[0],
-    ], ensure_ascii=False)
+    output = json.dumps(
+        [
+            call(box, "get_order", order_id=8, contact=ANA_PHONE)[0],
+            call(box, "check_return", order_id=8, contact=ANA_PHONE, reason="defeito")[0],
+        ],
+        ensure_ascii=False,
+    )
     for customer in data.orders.customers.values():
         assert customer["email"] not in output and customer["phone"] not in output

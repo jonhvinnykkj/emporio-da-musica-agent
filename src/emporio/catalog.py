@@ -5,10 +5,11 @@ import difflib
 import json
 import re
 import unicodedata
-from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import Any
 
 from emporio.pricing import Quote, quote
 
@@ -22,20 +23,60 @@ AVAILABLE, OUT_OF_STOCK, DISCONTINUED, COMING_SOON = (
 # from the product name describes a different instrument (e.g. "Music Man Bass 1X"
 # described as a Fender Jazz Bass), so the name and the structured specs win.
 KNOWN_MARKS = (
-    "Crafter", "Fender", "Giannini", "Gibson", "Ibanez", "Kala", "Kalani", "Korg", "Martin",
-    "Music Man", "Nord", "Ohana", "Pearl", "Precision", "PRS", "Roland", "Rozini", "Shelby",
-    "Tagima", "Takamine", "Tama", "Taylor", "Yamaha",
+    "Crafter",
+    "Fender",
+    "Giannini",
+    "Gibson",
+    "Ibanez",
+    "Kala",
+    "Kalani",
+    "Korg",
+    "Martin",
+    "Music Man",
+    "Nord",
+    "Ohana",
+    "Pearl",
+    "Precision",
+    "PRS",
+    "Roland",
+    "Rozini",
+    "Shelby",
+    "Tagima",
+    "Takamine",
+    "Tama",
+    "Taylor",
+    "Yamaha",
 )
 CATEGORY_WORDS = {
-    "guitarra": 1, "guitarras": 1,
-    "baixo": 2, "baixos": 2, "contrabaixo": 2,
-    "bateria": 3, "baterias": 3, "percussao": 3,
-    "teclado": 4, "teclados": 4, "piano": 4, "pianos": 4, "sintetizador": 4,
-    "violao": 5, "violoes": 5,
-    "flauta": 6, "clarinete": 6, "saxofone": 6, "sax": 6, "oboe": 6,
-    "trompete": 7, "trombone": 7, "tuba": 7, "trompa": 7,
-    "violino": 8, "viola": 8, "violoncelo": 8,
-    "ukulele": 9, "ukuleles": 9,
+    "guitarra": 1,
+    "guitarras": 1,
+    "baixo": 2,
+    "baixos": 2,
+    "contrabaixo": 2,
+    "bateria": 3,
+    "baterias": 3,
+    "percussao": 3,
+    "teclado": 4,
+    "teclados": 4,
+    "piano": 4,
+    "pianos": 4,
+    "sintetizador": 4,
+    "violao": 5,
+    "violoes": 5,
+    "flauta": 6,
+    "clarinete": 6,
+    "saxofone": 6,
+    "sax": 6,
+    "oboe": 6,
+    "trompete": 7,
+    "trombone": 7,
+    "tuba": 7,
+    "trompa": 7,
+    "violino": 8,
+    "viola": 8,
+    "violoncelo": 8,
+    "ukulele": 9,
+    "ukuleles": 9,
 }
 STOPWORDS = {"a", "as", "com", "da", "de", "do", "e", "em", "na", "no", "o", "os", "para", "por", "um", "uma"}
 FUZZY_CUTOFF = 0.8
@@ -51,9 +92,23 @@ def description_contradicts_name(name: str, description: str) -> bool:
     return bool(cited) and not any(mark.lower() in name.lower() for mark in cited)
 
 
-def read_csv(path: Path) -> list[dict]:
-    with path.open(encoding="utf-8", newline="") as file:
-        return list(csv.DictReader(file))
+class DataError(Exception):
+    """A store data file is missing, lacks a column or holds a value that cannot be read."""
+
+
+def read_csv[T](path: Path, columns: tuple[str, ...], build: Callable[[dict[str, str]], T]) -> list[T]:
+    """Read one CSV and build an item per row; every failure names the file."""
+    try:
+        with path.open(encoding="utf-8", newline="") as file:
+            reader = csv.DictReader(file)
+            missing = [column for column in columns if column not in (reader.fieldnames or [])]
+            if missing:
+                raise DataError(f"{path.name}: missing column(s) {', '.join(missing)}")
+            return [build(row) for row in reader]
+    except FileNotFoundError:
+        raise DataError(f"{path.name}: file not found in {path.parent}") from None
+    except (KeyError, ValueError, InvalidOperation, TypeError) as error:
+        raise DataError(f"{path.name}: invalid value ({error!r})") from error
 
 
 @dataclass(frozen=True)
@@ -66,7 +121,7 @@ class Product:
     description: str
     stock: int
     status: str
-    specs: dict
+    specs: dict[str, Any]
     quote: Quote
     search_tokens: frozenset[str] = field(repr=False, default=frozenset())
     search_compact: str = field(repr=False, default="")
@@ -84,19 +139,20 @@ class Product:
             return COMING_SOON
         return AVAILABLE if self.stock > 0 else OUT_OF_STOCK
 
-    def to_dict(self) -> dict:
-        data = {
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {
             "id": self.id,
             "nome": self.name,
             "categoria": self.category,
             "disponibilidade": self.availability,
-            "especificacoes": self.specs,
+            "promocao_ativa": self.quote.has_promotion,
         }
         if self.availability == AVAILABLE:
             data["estoque"] = self.stock
             data |= self.quote.to_dict()
         if self.description_reliable:
             data["descricao"] = self.description
+            data["especificacoes"] = self.specs
         else:
             data["nota_interna"] = "Descrição do cadastro diverge do nome. Use só nome e especificações."
         return data
@@ -104,25 +160,44 @@ class Product:
 
 class Catalog:
     def __init__(self, data_dir: Path):
-        categories = {int(row["category_id"]): row["name"] for row in read_csv(data_dir / "categories.csv")}
-        self.categories = categories
-        self.active_promotions: dict[int, dict] = {}
-        self.expired_promotions: dict[int, list[dict]] = defaultdict(list)
-        for row in read_csv(data_dir / "promotions.csv"):
-            promotion = {"name": row["description"], "percent": int(row["discount_percent"])}
-            product_id = int(row["product_id"])
+        self.categories: dict[int, str] = dict(
+            read_csv(
+                data_dir / "categories.csv",
+                ("category_id", "name"),
+                lambda row: (int(row["category_id"]), row["name"]),
+            )
+        )
+        # Only rows with is_active=1 are promotions; the biggest discount wins per product.
+        self.active_promotions: dict[int, dict[str, Any]] = {}
+        promotions = read_csv(
+            data_dir / "promotions.csv",
+            ("product_id", "discount_percent", "description", "is_active"),
+            lambda row: (
+                int(row["product_id"]),
+                {"name": row["description"], "percent": int(row["discount_percent"])},
+                row["is_active"] == "1",
+            ),
+        )
+        for product_id, promotion, is_active in promotions:
             current = self.active_promotions.get(product_id)
-            if row["is_active"] != "1":
-                self.expired_promotions[product_id].append(promotion)
-            elif current is None or promotion["percent"] > current["percent"]:
+            if is_active and (current is None or promotion["percent"] > current["percent"]):
                 self.active_promotions[product_id] = promotion
 
         self.products: dict[int, Product] = {}
-        for row in read_csv(data_dir / "products.csv"):
-            product = self._build_product(row)
+        product_columns = (
+            "product_id",
+            "category_id",
+            "name",
+            "price_brl",
+            "description",
+            "stock_quantity",
+            "status",
+            "specs",
+        )
+        for product in read_csv(data_dir / "products.csv", product_columns, self._build_product):
             self.products[product.id] = product
 
-    def _build_product(self, row: dict) -> Product:
+    def _build_product(self, row: dict[str, str]) -> Product:
         product_id = int(row["product_id"])
         category_id = int(row["category_id"])
         list_price = Decimal(row["price_brl"])
@@ -146,7 +221,11 @@ class Catalog:
             searchable.append(draft.description)
         text = normalize(" ".join(searchable))
         return Product(
-            **{**draft.__dict__, "search_tokens": frozenset(text.split()), "search_compact": text.replace(" ", "")}
+            **{
+                **draft.__dict__,
+                "search_tokens": frozenset(text.split()),
+                "search_compact": text.replace(" ", ""),
+            }
         )
 
     def in_category(self, category_id: int) -> list[Product]:
@@ -157,7 +236,9 @@ class Catalog:
         lines = []
         for category_id, name in self.categories.items():
             count = sum(p.availability == AVAILABLE for p in self.in_category(category_id))
-            lines.append(f"- {name}: {count} modelos à venda" if count else f"- {name}: nenhum item no momento")
+            lines.append(
+                f"- {name}: {count} modelos à venda" if count else f"- {name}: nenhum item no momento"
+            )
         return "\n".join(lines)
 
     def search(
@@ -168,8 +249,9 @@ class Catalog:
         max_price: float | None = None,
         strings: str | None = None,
         electronics: bool | None = None,
-        limit: int = 8,
-    ) -> dict:
+        on_sale: bool = False,
+        limit: int = 5,
+    ) -> dict[str, Any]:
         tokens = [t for t in normalize(query or "").split() if t not in STOPWORDS]
         category_id = next((i for i, name in self.categories.items() if name == category), None)
         for token in list(tokens):
@@ -178,15 +260,17 @@ class Catalog:
                 tokens.remove(token)
 
         candidates = [
-            p for p in self.products.values()
+            p
+            for p in self.products.values()
             if (category_id is None or p.category_id == category_id)
             and _matches_specs(p, strings, electronics)
+            and (not on_sale or p.quote.has_promotion)
         ]
         match_quality, matched = _rank(candidates, tokens)
         available = [p for p in matched if p.availability == AVAILABLE and _in_range(p, min_price, max_price)]
         available.sort(key=lambda p: p.quote.price)
 
-        result = {
+        result: dict[str, Any] = {
             "total_encontrado": len(available),
             "mostrando": min(len(available), limit),
             "produtos": [p.to_dict() for p in available[:limit]],
@@ -206,23 +290,6 @@ class Catalog:
         pool = [p for p in self.in_category(product.category_id) if p.availability == AVAILABLE]
         same_strings = [p for p in pool if p.specs.get("strings") == product.specs.get("strings")]
         return sorted(same_strings or pool, key=lambda p: abs(p.list_price - product.list_price))[:count]
-
-    def promotions_report(self, query: str | None = None) -> dict:
-        wanted = normalize(query or "")
-        active = []
-        for product_id, promotion in self.active_promotions.items():
-            product = self.products[product_id]
-            if product.availability != AVAILABLE:
-                continue
-            if not wanted or wanted in normalize(f"{promotion['name']} {product.name}"):
-                active.append(product.to_dict())
-        expired = sorted({
-            promotion["name"]
-            for promotions in self.expired_promotions.values()
-            for promotion in promotions
-            if wanted and wanted in normalize(promotion["name"])
-        })
-        return {"promocoes_ativas": active, "campanhas_encerradas": expired}
 
 
 def _matches_specs(product: Product, strings: str | None, electronics: bool | None) -> bool:

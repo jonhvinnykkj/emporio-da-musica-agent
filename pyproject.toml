@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "anthropic",
-    "holidays",
     "pypdf",
     "python-dotenv",
     "tzdata",
@@ -23,7 +22,29 @@ build-backend = "hatchling.build"
 packages = ["src/emporio"]
 
 [dependency-groups]
-dev = ["pytest"]
+dev = ["pytest", "pytest-cov", "hypothesis", "ruff", "mypy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src/emporio"]
+
+[tool.coverage.report]
+fail_under = 90
+
+[tool.ruff]
+line-length = 110
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Prompt and tool-description text is customer-facing prose kept on one line per sentence.
+"src/emporio/prompts.py" = ["E501"]
+"src/emporio/tools.py" = ["E501"]
+
+[tool.mypy]
+files = ["src"]
+strict = true

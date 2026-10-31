@@ -7,7 +7,15 @@ import holidays
 
 STORE_TZ = ZoneInfo("America/Campo_Grande")
 OPENING_HOURS = {weekday: (time(9), time(18)) for weekday in range(5)} | {5: (time(9), time(13))}
-WEEKDAYS = ("segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo")
+WEEKDAYS = (
+    "segunda-feira",
+    "terça-feira",
+    "quarta-feira",
+    "quinta-feira",
+    "sexta-feira",
+    "sábado",
+    "domingo",
+)
 _HOLIDAYS = holidays.Brazil(subdiv="MS")
 
 
@@ -39,4 +47,6 @@ def describe(now: datetime) -> str:
     else:
         opening = next_opening(now)
     weekday = WEEKDAYS[opening.weekday()]
-    return f"Agora é {stamp}. A loja está fechada. A equipe volta {weekday}, {opening:%d/%m} às {opening:%H:%M}."
+    return (
+        f"Agora é {stamp}. A loja está fechada. A equipe volta {weekday}, {opening:%d/%m} às {opening:%H:%M}."
+    )

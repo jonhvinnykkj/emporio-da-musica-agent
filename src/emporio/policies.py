@@ -16,18 +16,18 @@ COLUMN_GAP = re.compile(r"\s{2,}")
 # reading we adopted; the README lists the same decisions for the store to confirm.
 SECTION_NOTES = {
     "1": "O catálogo atual é menor que os 300 instrumentos citados e não tem itens de sopro nem de "
-         "cordas orquestrais. Não repita esse número; veja o catálogo nas instruções.",
+    "cordas orquestrais. Não repita esse número; veja o catálogo nas instruções.",
     "1.2": "Canais oficiais: telefone (67) 3341-4444 e e-mail contato@emporiodamusica.com.br, sem acento.",
     "3": "A seção 3.1 é mais específica e prevalece sobre a coluna 'Parcela mínima' desta tabela.",
     "3.1": "Até 3x, a parcela não pode ficar abaixo de R$ 50,00. Valores calculados vêm de "
-           "search_products e quote_order.",
+    "search_products e quote_order.",
     "4.1": "Só vale para compras online. A base não registra o canal; pedidos enviados com rastreio "
-           "são tratados como online.",
+    "são tratados como online.",
     "4.2": "Do 31º ao 90º dia após o recebimento ainda vale a garantia legal (seção 8.1): não diga que "
-           "a loja não tem responsabilidade, encaminhe à equipe.",
+    "a loja não tem responsabilidade, encaminhe à equipe.",
     "4.3": "O prazo de 7 dias é contado a partir do recebimento.",
     "5.1": "Só Campo Grande está confirmada como região metropolitana. Pedido de exatamente R$ 500,00 "
-           "tem frete grátis.",
+    "tem frete grátis.",
     "6.1": "Este é o calendário geral. Só vale a promoção que estiver ativa no sistema (list_promotions).",
     "7": "A seção cita o WhatsApp (67) 3321-4500, que diverge da seção 1.2. Informe só (67) 3341-4444.",
     "7.1": "Não há lojas parceiras cadastradas: não cite nomes de lojas.",
@@ -57,7 +57,8 @@ class PolicyManual:
         for requested in section_ids:
             requested = requested.strip().rstrip(".")
             matches = [
-                section for section in self.sections.values()
+                section
+                for section in self.sections.values()
                 if section.id == requested or section.id.startswith(f"{requested}.")
             ]
             found.extend(matches) if matches else missing.append(requested)

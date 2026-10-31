@@ -153,8 +153,14 @@ class OrderBook:
             return self._defect_decision(order, today, days_since_receipt) | facts
         section = "4.1" if reason == "arrependimento" else "4.3"
         if days_since_receipt <= RETURN_WINDOW_DAYS:
-            return _decision(True, f"Dentro do prazo de {RETURN_WINDOW_DAYS} dias.", "seguir_condicoes", section) | facts
-        return _decision(False, f"Fora do prazo de {RETURN_WINDOW_DAYS} dias.", "informar_cliente", section) | facts
+            return (
+                _decision(True, f"Dentro do prazo de {RETURN_WINDOW_DAYS} dias.", "seguir_condicoes", section)
+                | facts
+            )
+        return (
+            _decision(False, f"Fora do prazo de {RETURN_WINDOW_DAYS} dias.", "informar_cliente", section)
+            | facts
+        )
 
     @staticmethod
     def _defect_decision(order: Order, today: date, days_since_receipt: int) -> dict:
@@ -169,7 +175,8 @@ class OrderBook:
             )
         return _decision(
             False,
-            "Fora da troca direta e da garantia legal. Pode valer a garantia do fabricante, e a loja pode intermediar.",
+            "Fora da troca direta e da garantia legal. "
+            "Pode valer a garantia do fabricante, e a loja pode intermediar.",
             "oferecer_intermediacao",
             "4.2 e 8.2",
         )

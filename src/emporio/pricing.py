@@ -12,7 +12,7 @@ METRO_FREE_SHIPPING_FROM = Decimal("500")
 METRO_SHIPPING_FEE = Decimal("35")
 
 
-def to_money(value) -> Decimal:
+def to_money(value: Decimal | str | float) -> Decimal:
     return Decimal(str(value)).quantize(CENT, rounding=ROUND_HALF_UP)
 
 
@@ -60,7 +60,7 @@ class Quote:
         total = self.price * quantity
         return total if self.has_promotion else to_money(total * (1 - PIX_DISCOUNT))
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, str | None]:
         if self.has_promotion:
             return {
                 "preco_original": brl(self.list_price),
@@ -72,7 +72,7 @@ class Quote:
             }
         return {
             "preco": brl(self.price),
-            "preco_no_pix": brl(self.pix_price),
+            "preco_no_pix": brl(to_money(self.price * (1 - PIX_DISCOUNT))),
             "parcelamento": installment_text(self.price),
         }
 

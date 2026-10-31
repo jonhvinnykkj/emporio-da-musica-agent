@@ -16,7 +16,14 @@ MAX_FAILED_CHECKS = 3
 COMPLAINT_RETURN_TIME = "24 horas úteis"
 COMBINED_PAYMENT_ABOVE = Decimal("2000")
 TICKET_KINDS = [
-    "reclamacao", "cancelamento", "troca_ou_devolucao", "garantia", "atraso", "privacidade", "duvida", "atendente",
+    "reclamacao",
+    "cancelamento",
+    "troca_ou_devolucao",
+    "garantia",
+    "atraso",
+    "privacidade",
+    "duvida",
+    "atendente",
 ]
 NOT_VERIFIED = {
     "verificado": False,
@@ -40,12 +47,22 @@ def tool_definitions(category_names: list[str]) -> list[dict]:
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Marca, modelo ou característica. Ex.: 'takamine gd20', 'iniciante', 'choro'."},
+                    "query": {
+                        "type": "string",
+                        "description": "Marca, modelo ou característica. Ex.: 'takamine gd20', 'iniciante', 'choro'.",
+                    },
                     "category": {"type": "string", "enum": category_names},
                     "min_price": {"type": "number", "description": "Preço mínimo em reais."},
                     "max_price": {"type": "number", "description": "Preço máximo em reais."},
-                    "strings": {"type": "string", "enum": ["nylon", "aco"], "description": "Tipo de corda de violões e ukuleles."},
-                    "electronics": {"type": "boolean", "description": "true para eletroacústico, false para acústico."},
+                    "strings": {
+                        "type": "string",
+                        "enum": ["nylon", "aco"],
+                        "description": "Tipo de corda de violões e ukuleles.",
+                    },
+                    "electronics": {
+                        "type": "boolean",
+                        "description": "true para eletroacústico, false para acústico.",
+                    },
                 },
                 "required": [],
                 "additionalProperties": False,
@@ -79,7 +96,10 @@ def tool_definitions(category_names: list[str]) -> list[dict]:
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "properties": {"product_id": {"type": "integer"}, "quantity": {"type": "integer"}},
+                            "properties": {
+                                "product_id": {"type": "integer"},
+                                "quantity": {"type": "integer"},
+                            },
                             "required": ["product_id", "quantity"],
                             "additionalProperties": False,
                         },
@@ -101,7 +121,10 @@ def tool_definitions(category_names: list[str]) -> list[dict]:
                 "type": "object",
                 "properties": {
                     "order_id": {"type": "integer"},
-                    "contact": {"type": "string", "description": "Telefone ou e-mail informado pelo cliente."},
+                    "contact": {
+                        "type": "string",
+                        "description": "Telefone ou e-mail informado pelo cliente.",
+                    },
                 },
                 "required": ["order_id", "contact"],
                 "additionalProperties": False,
@@ -232,12 +255,14 @@ class Toolbox:
                 line_total = product.quote.price * quantity
                 subtotal += line_total
                 pix_total += product.quote.pix_total(quantity)
-                lines.append({
-                    "produto": product.name,
-                    "quantidade": quantity,
-                    "preco_unitario": brl(product.quote.price),
-                    "total": brl(line_total),
-                })
+                lines.append(
+                    {
+                        "produto": product.name,
+                        "quantidade": quantity,
+                        "preco_unitario": brl(product.quote.price),
+                        "total": brl(line_total),
+                    }
+                )
         result = {"itens": lines, "problemas": problems}
         if not lines:
             return result
@@ -250,7 +275,9 @@ class Toolbox:
         }
         return result | _shipping(subtotal, pix_total, city)
 
-    def open_ticket(self, kind: str, summary: str, contact: str | None = None, order_id: int | None = None) -> dict:
+    def open_ticket(
+        self, kind: str, summary: str, contact: str | None = None, order_id: int | None = None
+    ) -> dict:
         protocol = self.store.create_ticket(self.session_id, kind, summary, contact, order_id)
         result = {"protocolo": protocol, "encaminhado_para": "equipe de atendimento"}
         if kind == "reclamacao":

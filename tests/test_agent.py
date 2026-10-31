@@ -59,7 +59,11 @@ def test_runs_a_tool_and_feeds_the_result_back(data):
     assert turn.tool_calls[0].name == "search_products"
     assert not turn.guard_fired
     result = client.requests[1]["messages"][-1]["content"][0]
-    assert result["type"] == "tool_result" and result["tool_use_id"] == "t1" and "R$ 2.199,00" in result["content"]
+    assert (
+        result["type"] == "tool_result"
+        and result["tool_use_id"] == "t1"
+        and "R$ 2.199,00" in result["content"]
+    )
 
 
 def test_runs_parallel_tool_calls_in_one_message(data):
@@ -89,7 +93,9 @@ def test_invented_price_goes_back_to_the_model_once(data):
 
 
 def test_price_still_without_source_is_withheld(data):
-    agent, _ = make_agent(data, response(text_block("Custa R$ 1.999,00!")), response(text_block("É R$ 1.999,00 mesmo.")))
+    agent, _ = make_agent(
+        data, response(text_block("Custa R$ 1.999,00!")), response(text_block("É R$ 1.999,00 mesmo."))
+    )
     assert agent.reply("s", "preço?").text == UNVERIFIED_AMOUNT_TEXT
 
 

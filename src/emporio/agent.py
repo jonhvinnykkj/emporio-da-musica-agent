@@ -26,8 +26,9 @@ UNVERIFIED_AMOUNT_TEXT = (
     "Quer que eu abra um chamado para eles te retornarem?"
 )
 GUARD_CORRECTION = (
-    "[Verificação automática do sistema, não é mensagem do cliente] Estes valores da sua resposta não vieram de "
-    "nenhuma ferramenta neste turno: {amounts}. Consulte a ferramenta adequada ou reescreva sem esses valores."
+    "[Verificação automática do sistema, não é mensagem do cliente] Estes valores da sua resposta "
+    "não vieram de nenhuma ferramenta neste turno: {amounts}. "
+    "Consulte a ferramenta adequada ou reescreva sem esses valores."
 )
 
 
