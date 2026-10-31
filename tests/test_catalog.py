@@ -141,3 +141,11 @@ def test_invalid_value_names_the_file(tmp_path, data_dir):
     (tmp_path / "categories.csv").write_text("category_id,name\nabc,Guitarras\n", encoding="utf-8")
     with pytest.raises(DataError, match="categories.csv"):
         Catalog(tmp_path)
+
+
+@pytest.mark.parametrize("bad", [[], "barato", float("nan"), True])
+def test_search_rejects_a_price_limit_that_is_not_a_number(catalog, bad):
+    with pytest.raises(ValueError):
+        catalog.search(query="violao", min_price=bad)
+    with pytest.raises(ValueError):
+        catalog.search(query="violao", max_price=bad)

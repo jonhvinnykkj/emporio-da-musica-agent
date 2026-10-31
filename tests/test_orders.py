@@ -1,6 +1,9 @@
+from dataclasses import replace
 from datetime import date
 
 import pytest
+
+from emporio.orders import format_date, parse_date, payment_label
 
 
 @pytest.mark.parametrize(
@@ -68,3 +71,62 @@ def test_view_shows_cancellation_reason_only_when_cancelled(book):
     assert cancelled["status"] == "Cancelado"
     assert "fora de estoque" in cancelled["motivo_cancelamento"]
     assert "motivo_cancelamento" not in book.view(book.orders[8], today)
+
+
+@pytest.mark.parametrize(
+    "method, label",
+    [
+        ("pix", "PIX"),
+        ("boleto", "Boleto"),
+        ("debit", "Cartão de débito"),
+        ("credit_6x", "Cartão de crédito em 6x"),
+        ("voucher", "voucher"),
+    ],
+)
+def test_payment_label(method, label):
+    assert payment_label(method) == label
+
+
+def test_dates_are_written_day_first_and_empty_means_none():
+    assert format_date(date(2026, 2, 8)) == "08/02/2026"
+    assert parse_date("") is None and parse_date("2026-02-28") == date(2026, 2, 28)
+
+
+def test_shipped_order_view_is_complete(book):
+    view = book.view(book.orders[8], date(2026, 3, 1))
+    assert view == {
+        "pedido": 8,
+        "cliente_primeiro_nome": "Ana",
+        "data_do_pedido": "15/02/2026",
+        "status": "Enviado",
+        "valor_registrado": "R$ 349,90",
+        "pagamento": "Cartão de débito",
+        "itens": [{"produto": book.catalog.products[book.orders[8].items[0][0]].name, "quantidade": 1}],
+        "dias_desde_a_compra": 14,
+        "requer_atencao": True,
+        "codigo_de_rastreio": "BRJL5544332BR",
+        "previsao_de_entrega": "28/02/2026",
+        "dias_desde_a_previsao": 1,
+    }
+
+
+def test_order_loaded_with_its_status_dates_and_notes(book):
+    order = book.orders[18]
+    assert (order.customer_id, order.status, order.estimated_delivery) == (17, "cancelled", None)
+    assert "fora de estoque" in order.notes and order.items
+    shipped = book.orders[8]
+    assert shipped.tracking_code == "BRJL5544332BR" and shipped.estimated_delivery == date(2026, 2, 28)
+
+
+def test_confirmed_order_stalls_after_fifteen_days(book):
+    order = book.orders[9]
+    on_day_15 = date.fromordinal(order.date.toordinal() + 15)
+    assert book.view(order, on_day_15)["requer_atencao"] is False
+    assert book.view(order, date.fromordinal(on_day_15.toordinal() + 1))["requer_atencao"] is True
+
+
+def test_notes_are_hidden_unless_the_order_is_cancelled(book):
+    noted = replace(book.orders[1], notes="obs interna")
+    assert "motivo_cancelamento" not in book.view(noted, date(2026, 10, 31))
+    silent = replace(book.orders[18], notes="")
+    assert "motivo_cancelamento" not in book.view(silent, date(2026, 10, 31))

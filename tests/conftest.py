@@ -5,6 +5,7 @@ import pytest
 
 from emporio.catalog import Catalog
 from emporio.orders import OrderBook
+from emporio.tools import StoreData
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 
@@ -27,3 +28,8 @@ def book(catalog: Catalog) -> OrderBook:
 @pytest.fixture
 def now() -> datetime:
     return datetime(2026, 10, 28, 14, 0)
+
+
+@pytest.fixture(scope="session")
+def data(data_dir: Path) -> StoreData:
+    return StoreData.load(data_dir)

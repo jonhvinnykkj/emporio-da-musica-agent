@@ -9,7 +9,7 @@ from typing import Any
 
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 # Digits with the usual separators; anything with fewer than 8 digits (prices, order numbers) is left alone.
-PHONE = re.compile(r"(?<!\w)\+?\(?\d[\d\s().-]{5,}\d")
+PHONE = re.compile(r"(?<!\d)\+?\(?\d[\d\s().-]{5,}\d")
 MIN_PHONE_DIGITS = 8
 KEPT_DIGITS = 4
 

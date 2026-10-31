@@ -267,7 +267,8 @@ class Catalog:
             and (not on_sale or p.quote.has_promotion)
         ]
         match_quality, matched = _rank(candidates, tokens)
-        available = [p for p in matched if p.availability == AVAILABLE and _in_range(p, min_price, max_price)]
+        minimum, maximum = _bound(min_price), _bound(max_price)
+        available = [p for p in matched if p.availability == AVAILABLE and _in_range(p, minimum, maximum)]
         available.sort(key=lambda p: p.quote.price)
 
         result: dict[str, Any] = {
@@ -300,12 +301,23 @@ def _matches_specs(product: Product, strings: str | None, electronics: bool | No
     return True
 
 
-def _in_range(product: Product, min_price: float | None, max_price: float | None) -> bool:
+def _bound(value: float | None) -> Decimal | None:
+    """A price limit as Decimal; anything that is not a finite-or-infinite number is a bad argument."""
+    if value is None:
+        return None
+    try:
+        bound = Decimal(str(value))
+    except InvalidOperation:
+        raise ValueError(f"invalid price limit: {value!r}") from None
+    if bound.is_nan():
+        raise ValueError(f"invalid price limit: {value!r}")
+    return bound
+
+
+def _in_range(product: Product, minimum: Decimal | None, maximum: Decimal | None) -> bool:
     """Compares against what the customer pays today, so a promotion can bring an item into range."""
     price = product.quote.price
-    return (min_price is None or price >= Decimal(str(min_price))) and (
-        max_price is None or price <= Decimal(str(max_price))
-    )
+    return (minimum is None or price >= minimum) and (maximum is None or price <= maximum)
 
 
 def _token_hits(product: Product, token: str) -> bool:

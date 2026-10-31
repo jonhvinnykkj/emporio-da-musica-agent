@@ -31,3 +31,7 @@ def test_invented_amount_is_caught():
 
 def test_plain_decimal_in_the_reply_is_compared_with_the_formatted_evidence():
     assert unsupported_amounts("Fica R$ 1199.80.", ['{"preco": "R$ 1.199,80"}']) == set()
+
+
+def test_dot_decimal_after_thousands_dots_is_read_as_cents():
+    assert amounts_in("R$ 1.199.80") == {Decimal("1199.80")}

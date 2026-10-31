@@ -50,3 +50,8 @@ def test_concurrent_records_do_not_interleave(tmp_path):
     for thread in threads:
         thread.join()
     assert len([json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]) == 20
+
+
+def test_mask_hides_a_phone_glued_to_a_word():
+    masked = mask_contact("whatsapp67996547821 ou fone:6733414444")
+    assert "99654" not in masked and "3341" not in masked

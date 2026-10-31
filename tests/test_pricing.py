@@ -4,7 +4,15 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from emporio.pricing import INSTALLMENT_TIERS, brl, max_installments, metro_shipping, quote
+from emporio.pricing import (
+    INSTALLMENT_TIERS,
+    brl,
+    installment_text,
+    max_installments,
+    metro_shipping,
+    quote,
+    to_money,
+)
 
 
 @pytest.mark.parametrize(
@@ -58,3 +66,51 @@ def test_installment_never_goes_below_the_floor(amount):
     count = max_installments(amount)
     floor = next(value for limit, value in INSTALLMENT_TIERS if count <= limit)
     assert count == 1 or amount / count >= floor
+
+
+@pytest.mark.parametrize(
+    "value, expected", [("0.125", "0.13"), ("2.675", "2.68"), ("2.665", "2.67"), ("10.004", "10.00")]
+)
+def test_to_money_rounds_half_up(value, expected):
+    assert to_money(value) == Decimal(expected)
+
+
+@pytest.mark.parametrize(
+    "amount, expected",
+    [("49.99", 1), ("100", 2), ("99.99", 1), ("150", 3), ("319.99", 3), ("320", 4), ("480", 6), ("600", 6)],
+)
+def test_installment_boundaries(amount, expected):
+    assert max_installments(Decimal(amount)) == expected
+
+
+def test_installment_text_states_count_and_value():
+    assert installment_text(Decimal("2199")) == "até 12x de R$ 183,25 sem juros"
+    assert installment_text(Decimal("120")) == "até 2x de R$ 60,00 sem juros"
+
+
+def test_installment_text_says_cash_only_when_it_cannot_be_split():
+    assert installment_text(Decimal("90")) == "à vista (R$ 90,00), valor não permite parcelar"
+
+
+def test_quote_without_discount_keeps_the_list_price_and_no_promotion():
+    plain = quote(Decimal("2199"))
+    assert plain.list_price == plain.price == Decimal("2199") and not plain.has_promotion
+
+
+def test_plain_quote_dict_has_price_pix_and_installments():
+    assert quote(Decimal("2199")).to_dict() == {
+        "preco": "R$ 2.199,00",
+        "preco_no_pix": "R$ 2.089,05",
+        "parcelamento": "até 12x de R$ 183,25 sem juros",
+    }
+
+
+def test_promotional_quote_dict_names_the_promotion_and_denies_pix():
+    assert quote(Decimal("549"), 20, "Desconto Exclusivo").to_dict() == {
+        "preco_original": "R$ 549,00",
+        "desconto": "20%",
+        "promocao": "Desconto Exclusivo",
+        "preco_promocional": "R$ 439,20",
+        "pix": "desconto de PIX não se aplica sobre preço promocional",
+        "parcelamento": "até 5x de R$ 87,84 sem juros",
+    }
