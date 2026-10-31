@@ -85,7 +85,7 @@ CASES = [
         "10_saxophone",
         ("Vocês têm saxofone?",),
         (r"equipe|confirmar|sistema",),
-        (r"(?<!que )n[ãa]o (vendemos|trabalhamos)", r"R\$"),
+        (r"(?<!dizer que )n[ãa]o (vendemos|trabalhamos)", r"R\$"),
     ),
     Case(
         "11_guitar_strings",
@@ -123,7 +123,12 @@ CASES = [
     Case(
         "16_regret_after_delivery",
         ("Me arrependi da compra do pedido 4, posso devolver? Telefone (67) 99812-3456",),
-        (r"7 dias", r"recebimento|recebeu|receb", r"equipe", r"n[ãa]o (sei|tenho|consigo|guarda)|confirm"),
+        (
+            r"7 dias",
+            r"recebimento|recebeu|receb",
+            r"equipe",
+            r"n[ãa]o (sei|tenho|consigo|guarda)|equipe.{0,60}confirm",
+        ),
         (r"pode devolver sim", r"prazo (j[aá] )?(passou|venceu|expirou)", r"n[ãa]o se aplica"),
     ),
     Case(

@@ -165,9 +165,8 @@ def summarize(results: list[CaseResult], spend: Spend, model: str, effort: str, 
         f"| {'; '.join(r.problems) or '-'} |"
         for r in results
     ]
-    return (
-        f"## Suite `{suite}`\n\n{headline(results, spend, model, effort)}\n\n"
-        + "\n".join(["| Case | Rounds passed | Detail |", "|---|---|---|", *rows])
+    return f"## Suite `{suite}`\n\n{headline(results, spend, model, effort)}\n\n" + "\n".join(
+        ["| Case | Rounds passed | Detail |", "|---|---|---|", *rows]
     )
 
 

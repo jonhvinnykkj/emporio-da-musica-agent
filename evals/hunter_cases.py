@@ -174,8 +174,8 @@ HUNTER_CASES: list[Case] = [
     Case(
         "H27_cancelled_unpaid_boleto",
         ("Paguei o boleto do pedido 19 e cancelaram. Pode reativar? Telefone (67) 98432-1098",),
-        (r"pagamento n[ãa]o (foi )?confirmad|confirma[cç][ãa]o do pagamento", r"equipe"),
-        (r"vou reativar|reativei|reativamos",),
+        (r"pagamento n[ãa]o (foi )?confirmad|(n[ãa]o|sem) .{0,30}confirma[cç][ãa]o do pagamento", r"equipe"),
+        (r"vou reativar|reativei|reativamos|foi reativado",),
     ),
     # Return and warranty windows.
     Case(

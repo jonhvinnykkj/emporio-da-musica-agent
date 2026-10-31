@@ -32,7 +32,7 @@ One message goes through these steps:
 1. The code drops empty input and input over 2,000 characters.
 2. The code puts the clock (date, time in `America/Campo_Grande`, open or closed, next opening) at the start of the customer's message.
 3. The model answers, asks for a missing detail, calls a tool, or declines.
-4. The code validates the tool arguments, runs the tool and returns JSON. At most 5 tool calls per turn.
+4. The code validates the tool arguments, runs the tool and returns JSON. After 5 tool calls in a turn, the model must answer with what it has.
 5. The model writes the answer from the returned fields.
 6. The code checks every amount written as `R$`. An amount that is not in this turn's tool results, in the manual or in the customer's message goes back to the model once. If it fails again, the customer gets a fixed safe reply and the case is forwarded.
 7. The code logs the exchange to JSONL with phone numbers masked.
@@ -41,7 +41,7 @@ If the API or a tool fails, the turn is rolled back, so the history never holds 
 
 | Tool | What it does |
 |---|---|
-| `buscar_produtos` | Catalog search by text, category and price. Returns availability, price, PIX and installments already computed. Shows up to 5 items and states the total. |
+| `buscar_produtos` | Catalog search by text, category and price. Returns availability, price, PIX and installments already computed. Shows 5 items, up to 15 on request, and states the total. |
 | `calcular_compra` | Quantity or several products: subtotal, PIX total, installments and shipping (Campo Grande only). |
 | `consultar_pedido` | Order status. Needs the order number and the phone on file. |
 | `encaminhar_para_equipe` | Writes a handoff to a file. It changes no store data. |
@@ -52,7 +52,7 @@ If the API or a tool fails, the turn is rolled back, so the history never holds 
 
 **Provider SDK directly, no framework.** The whole of `src/emporio/agent.py` is about 200 lines. Discarded: LangGraph and LangChain. This loop is already a graph with three nodes: model, tools, and the check on amounts, with an edge back from the check to the model and another from the model to the tools. LangGraph would draw the same graph and add a dependency. It would pay off if there were branches that run in parallel, state that must survive a restart, a human approval step in the middle of a run, or several agents. None of these exists here.
 
-**Model: the smallest one that passes the proofs.** The default is Haiku 5.5 at low effort. The test order is Haiku 5.5, Sonnet 5.5, Opus 5.5, and the model chosen is the first that passes every scenario in 3 of 3 rounds. The choice comes from the proofs, not from preference. Both settings are environment variables.
+**Model: the smallest one that passes the proofs.** The default is Haiku 5.5 at medium effort. The test order was Haiku 5.5, Sonnet 5.5, Opus 5.5, so the choice comes from the proofs, not from preference. On the three hardest scenarios, 10 rounds each, Haiku at low effort passed 29 of 30, Haiku at medium 30 of 30, and Sonnet at low 21 of 30, at 16 times the cost. More effort helped and a larger model did not. Opus was not run, because Haiku had already passed. Both settings are environment variables.
 
 **The whole manual in the context.** The manual has 8 pages and about 1,750 words. "Consult policies" means that the model reads the manual that is in its fixed context and the manual wins over the model's own knowledge. There is no policy tool, no RAG and no embeddings. Discarded: retrieval, which could bring the wrong section back, and a policy tool, which adds a call for text that already fits. At a much larger manual, search by keywords comes first, then embeddings.
 
