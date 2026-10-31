@@ -2,14 +2,6 @@ from datetime import date
 
 import pytest
 
-from emporio.catalog import Catalog
-from emporio.orders import OrderBook
-
-
-@pytest.fixture(scope="module")
-def book(data_dir):
-    return OrderBook(data_dir, Catalog(data_dir))
-
 
 @pytest.mark.parametrize(
     "phone",

@@ -18,7 +18,7 @@ Resume a conversation with `uv run emporio --session <id>`. Everything else need
 
 ```bash
 uv run pytest                 # unit tests, model replaced by a scripted fake
-uv run python scripts/audit_data.py   # contradictions found in the data
+uv run python -c "from pathlib import Path; from emporio.catalog import Catalog; from emporio.orders import OrderBook; from emporio.data_audit import find_inconsistencies as f; d = Path('data'); c = Catalog(d); print(*f(c, OrderBook(d, c)), sep='\n')"   # contradictions found in the data
 ```
 
 With a key, `uv run python -m evals.run` runs the scenarios against the real model and
@@ -102,7 +102,7 @@ reopens on Tuesday, after Finados.
 
 ## Data problems found and how the agent handles them
 
-`scripts/audit_data.py` reproduces these findings.
+`emporio.data_audit.find_inconsistencies` reproduces these findings.
 
 | Finding | Decision |
 |---|---|

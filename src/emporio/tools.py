@@ -1,67 +1,67 @@
 """Tools the model can call. Each one is a narrow, typed door to the store's data."""
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 from emporio.catalog import AVAILABLE, Catalog, normalize
+from emporio.journal import Journal
+from emporio.manual import load_manual
 from emporio.orders import OrderBook
-from emporio.policies import PolicyManual
 from emporio.pricing import brl, installment_text, metro_shipping
-from emporio.store import Store
 
 MAX_FAILED_CHECKS = 3
+SEARCH_LIMIT = 5
 COMPLAINT_RETURN_TIME = "24 horas úteis"
 COMBINED_PAYMENT_ABOVE = Decimal("2000")
-TICKET_KINDS = [
-    "reclamacao",
-    "cancelamento",
-    "troca_ou_devolucao",
-    "garantia",
-    "atraso",
-    "privacidade",
-    "duvida",
-    "atendente",
-]
+HANDOFF_REASONS = ["reclamacao", "atendente", "sem_resposta", "aprovacao", "identidade", "outro"]
 NOT_VERIFIED = {
     "verificado": False,
-    "mensagem": "Não foi possível localizar o pedido com esses dados. Peça ao cliente para conferir o número e o contato.",
+    "mensagem": "Não foi possível localizar o pedido com esses dados. Peça ao cliente para conferir o número e o telefone.",
 }
 LOCKED = {
     "verificado": False,
-    "mensagem": "Muitas tentativas sem sucesso. Não tente de novo: encaminhe para a equipe com open_ticket.",
+    "bloqueado": True,
+    "mensagem": "Muitas tentativas sem sucesso. Não tente de novo: encaminhe para a equipe com encaminhar_para_equipe.",
 }
 
 
-def tool_definitions(category_names: list[str]) -> list[dict]:
+def tool_definitions(category_names: list[str]) -> list[dict[str, Any]]:
     return [
         {
-            "name": "search_products",
+            "name": "buscar_produtos",
             "description": (
                 "Busca instrumentos no sistema e devolve disponibilidade, preço atual, promoção ativa, preço no PIX, "
-                "parcelamento e especificações. Use para qualquer pergunta sobre produto, preço ou estoque. Itens "
-                "indisponíveis que batem com a busca vêm em 'indisponiveis', com sugestões em 'alternativas'."
+                "parcelamento e especificações. Use para qualquer pergunta sobre produto, preço, estoque ou promoção. "
+                "Mostra até 5 itens e informa o total encontrado. Itens indisponíveis que batem com a busca vêm em "
+                "'indisponiveis', com sugestões em 'alternativas'."
             ),
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "query": {
+                    "consulta": {
                         "type": "string",
                         "description": "Marca, modelo ou característica. Ex.: 'takamine gd20', 'iniciante', 'choro'.",
                     },
-                    "category": {"type": "string", "enum": category_names},
-                    "min_price": {"type": "number", "description": "Preço mínimo em reais."},
-                    "max_price": {"type": "number", "description": "Preço máximo em reais."},
-                    "strings": {
+                    "categoria": {"type": "string", "enum": category_names},
+                    "preco_minimo": {"type": "number", "description": "Preço mínimo em reais."},
+                    "preco_maximo": {"type": "number", "description": "Preço máximo em reais."},
+                    "cordas": {
                         "type": "string",
                         "enum": ["nylon", "aco"],
                         "description": "Tipo de corda de violões e ukuleles.",
                     },
-                    "electronics": {
+                    "eletrico": {
                         "type": "boolean",
                         "description": "true para eletroacústico, false para acústico.",
+                    },
+                    "somente_promocao": {
+                        "type": "boolean",
+                        "description": "true para listar só itens com promoção ativa.",
                     },
                 },
                 "required": [],
@@ -70,114 +70,66 @@ def tool_definitions(category_names: list[str]) -> list[dict]:
             "strict": True,
         },
         {
-            "name": "list_promotions",
-            "description": (
-                "Lista as promoções ativas no sistema. Se o cliente citar uma campanha, passe o nome em 'query': "
-                "'campanhas_encerradas' indica que ela não está mais valendo."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {"query": {"type": "string", "description": "Nome da campanha ou do produto."}},
-                "required": [],
-                "additionalProperties": False,
-            },
-            "strict": True,
-        },
-        {
-            "name": "quote_order",
+            "name": "calcular_compra",
             "description": (
                 "Calcula o valor de uma compra: subtotal, total no PIX, parcelamento e frete. Use sempre que houver "
-                "quantidade maior que 1, mais de um produto ou frete. Os ids vêm de search_products."
+                "quantidade maior que 1, mais de um produto ou frete. Os ids vêm de buscar_produtos."
             ),
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "items": {
+                    "itens": {
                         "type": "array",
                         "items": {
                             "type": "object",
                             "properties": {
-                                "product_id": {"type": "integer"},
-                                "quantity": {"type": "integer"},
+                                "produto_id": {"type": "integer"},
+                                "quantidade": {"type": "integer"},
                             },
-                            "required": ["product_id", "quantity"],
+                            "required": ["produto_id", "quantidade"],
                             "additionalProperties": False,
                         },
                     },
-                    "city": {"type": "string", "description": "Cidade de entrega, se o cliente informou."},
+                    "cidade": {"type": "string", "description": "Cidade de entrega, se o cliente informou."},
                 },
-                "required": ["items"],
+                "required": ["itens"],
                 "additionalProperties": False,
             },
             "strict": True,
         },
         {
-            "name": "get_order",
+            "name": "consultar_pedido",
             "description": (
-                "Consulta status, itens, rastreio e previsão de um pedido. Exige o número do pedido e o telefone ou "
-                "e-mail cadastrado, ambos informados pelo cliente nesta conversa."
+                "Consulta status, itens, rastreio e previsão de um pedido. Exige o número do pedido e o telefone "
+                "cadastrado, ambos informados pelo cliente nesta conversa. E-mail não identifica ninguém."
             ),
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "order_id": {"type": "integer"},
-                    "contact": {
-                        "type": "string",
-                        "description": "Telefone ou e-mail informado pelo cliente.",
-                    },
+                    "numero_pedido": {"type": "integer"},
+                    "telefone": {"type": "string", "description": "Telefone informado pelo cliente."},
                 },
-                "required": ["order_id", "contact"],
+                "required": ["numero_pedido", "telefone"],
                 "additionalProperties": False,
             },
             "strict": True,
         },
         {
-            "name": "check_return",
+            "name": "encaminhar_para_equipe",
             "description": (
-                "Verifica se um pedido pode ser devolvido ou trocado e calcula os prazos exatos. Use em todo pedido de "
-                "devolução, troca ou garantia ligado a um pedido. Exige número do pedido e telefone ou e-mail cadastrado."
+                "Registra o caso para a equipe humana, que retorna ao cliente. Use para reclamações, pedidos de "
+                "atendente, casos sem resposta no manual, trocas e devoluções que precisam de aprovação e quando a "
+                "identidade do cliente não pôde ser confirmada."
             ),
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "order_id": {"type": "integer"},
-                    "contact": {"type": "string"},
-                    "reason": {"type": "string", "enum": ["arrependimento", "defeito", "preferencia"]},
+                    "motivo": {"type": "string", "enum": HANDOFF_REASONS},
+                    "resumo": {"type": "string", "description": "Resumo objetivo do caso para a equipe."},
+                    "telefone": {"type": "string", "description": "Telefone do cliente, se informado."},
+                    "numero_pedido": {"type": "integer"},
                 },
-                "required": ["order_id", "contact", "reason"],
-                "additionalProperties": False,
-            },
-            "strict": True,
-        },
-        {
-            "name": "read_policy",
-            "description": (
-                "Lê seções do manual da loja. Use para horários, endereço, pagamento, parcelamento, trocas, frete, "
-                "promoções, garantia e privacidade. Passe os números do sumário; '4' traz também 4.1, 4.2 etc."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {"sections": {"type": "array", "items": {"type": "string"}}},
-                "required": ["sections"],
-                "additionalProperties": False,
-            },
-            "strict": True,
-        },
-        {
-            "name": "open_ticket",
-            "description": (
-                "Registra um chamado para a equipe humana e devolve o protocolo. Use para reclamações, cancelamentos, "
-                "atrasos, casos sem regra no manual, pedidos de exclusão de dados e quando o cliente pedir um atendente."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "kind": {"type": "string", "enum": TICKET_KINDS},
-                    "summary": {"type": "string", "description": "Resumo objetivo do caso para a equipe."},
-                    "contact": {"type": "string", "description": "Contato do cliente, se informado."},
-                    "order_id": {"type": "integer"},
-                },
-                "required": ["kind", "summary"],
+                "required": ["motivo", "resumo"],
                 "additionalProperties": False,
             },
             "strict": True,
@@ -189,31 +141,31 @@ def tool_definitions(category_names: list[str]) -> list[dict]:
 class StoreData:
     catalog: Catalog
     orders: OrderBook
-    manual: PolicyManual
+    manual: str
 
     @classmethod
     def load(cls, data_dir: Path) -> "StoreData":
         catalog = Catalog(data_dir)
-        return cls(catalog, OrderBook(data_dir, catalog), PolicyManual(data_dir / "politicas_da_loja.pdf"))
+        return cls(catalog, OrderBook(data_dir, catalog), load_manual(data_dir / "politicas_da_loja.pdf"))
 
 
 class Toolbox:
-    def __init__(self, data: StoreData, store: Store, session_id: str, today: date):
+    """The four tools for one conversation. Nothing here writes to the store's data."""
+
+    def __init__(self, data: StoreData, journal: Journal, session_id: str, clock: Callable[[], datetime]):
         self.data = data
-        self.store = store
+        self.journal = journal
         self.session_id = session_id
-        self.today = today
-        self.handlers = {
-            "search_products": self.data.catalog.search,
-            "list_promotions": self.data.catalog.promotions_report,
-            "quote_order": self.quote_order,
-            "get_order": self.get_order,
-            "check_return": self.check_return,
-            "read_policy": lambda sections: self.data.manual.read(sections),
-            "open_ticket": self.open_ticket,
+        self.clock = clock
+        self.failed_checks = 0
+        self.handlers: dict[str, Callable[..., dict[str, Any]]] = {
+            "buscar_produtos": self.search_products,
+            "calcular_compra": self.quote_purchase,
+            "consultar_pedido": self.look_up_order,
+            "encaminhar_para_equipe": self.hand_off,
         }
 
-    def run(self, name: str, arguments: dict) -> tuple[str, bool]:
+    def run(self, name: str, arguments: dict[str, Any]) -> tuple[str, bool]:
         """Return the JSON result and whether it is an error the model should see."""
         handler = self.handlers.get(name)
         if handler is None:
@@ -223,32 +175,47 @@ class Toolbox:
         except (TypeError, ValueError, KeyError) as error:
             return json.dumps({"erro": f"Parâmetros inválidos: {error}"}, ensure_ascii=False), True
 
-    def _verified(self, order_id: int, contact: str):
-        """Same answer for a wrong contact and a missing order, so numbers cannot be probed."""
-        if self.store.failed_checks(self.session_id) >= MAX_FAILED_CHECKS:
-            return None, LOCKED
-        order = self.data.orders.verified_order(order_id, contact)
+    def search_products(
+        self,
+        consulta: str | None = None,
+        categoria: str | None = None,
+        preco_minimo: float | None = None,
+        preco_maximo: float | None = None,
+        cordas: str | None = None,
+        eletrico: bool | None = None,
+        somente_promocao: bool = False,
+    ) -> dict[str, Any]:
+        return self.data.catalog.search(
+            query=consulta,
+            category=categoria,
+            min_price=preco_minimo,
+            max_price=preco_maximo,
+            strings=cordas,
+            electronics=eletrico,
+            on_sale=somente_promocao,
+            limit=SEARCH_LIMIT,
+        )
+
+    def look_up_order(self, numero_pedido: int, telefone: str) -> dict[str, Any]:
+        """Same answer for a wrong phone and a missing order, so numbers cannot be probed."""
+        if self.failed_checks >= MAX_FAILED_CHECKS:
+            return LOCKED
+        order = self.data.orders.verified_order(numero_pedido, telefone)
         if order is None:
-            self.store.record_failed_check(self.session_id)
-            return None, NOT_VERIFIED
-        return order, None
+            self.failed_checks += 1
+            return NOT_VERIFIED
+        return {"verificado": True} | self.data.orders.view(order, self.clock().date())
 
-    def get_order(self, order_id: int, contact: str) -> dict:
-        order, refusal = self._verified(order_id, contact)
-        return refusal or {"verificado": True} | self.data.orders.view(order, self.today)
-
-    def check_return(self, order_id: int, contact: str, reason: str) -> dict:
-        order, refusal = self._verified(order_id, contact)
-        return refusal or {"verificado": True} | self.data.orders.return_decision(order, reason, self.today)
-
-    def quote_order(self, items: list[dict], city: str | None = None) -> dict:
+    def quote_purchase(self, itens: list[dict[str, Any]], cidade: str | None = None) -> dict[str, Any]:
+        wanted: dict[int, int] = {}
+        for item in itens:
+            wanted[item["produto_id"]] = wanted.get(item["produto_id"], 0) + item["quantidade"]
         lines, problems = [], []
         subtotal = pix_total = Decimal("0")
-        for item in items:
-            product = self.data.catalog.products.get(item["product_id"])
-            quantity = item["quantity"]
+        for product_id, quantity in wanted.items():
+            product = self.data.catalog.products.get(product_id)
             if product is None or product.availability != AVAILABLE:
-                problems.append(f"Produto {item['product_id']} não está disponível para venda.")
+                problems.append(f"Produto {product_id} não está disponível para venda.")
             elif quantity < 1 or quantity > product.stock:
                 problems.append(f"{product.name}: quantidade pedida {quantity}, estoque {product.stock}.")
             else:
@@ -263,7 +230,7 @@ class Toolbox:
                         "total": brl(line_total),
                     }
                 )
-        result = {"itens": lines, "problemas": problems}
+        result: dict[str, Any] = {"itens": lines, "problemas": problems}
         if not lines:
             return result
         result |= {
@@ -273,19 +240,25 @@ class Toolbox:
             "parcelamento": installment_text(subtotal),
             "pode_combinar_formas_de_pagamento": subtotal > COMBINED_PAYMENT_ABOVE,
         }
-        return result | _shipping(subtotal, pix_total, city)
+        return result | _shipping(subtotal, pix_total, cidade)
 
-    def open_ticket(
-        self, kind: str, summary: str, contact: str | None = None, order_id: int | None = None
-    ) -> dict:
-        protocol = self.store.create_ticket(self.session_id, kind, summary, contact, order_id)
-        result = {"protocolo": protocol, "encaminhado_para": "equipe de atendimento"}
-        if kind == "reclamacao":
+    def hand_off(
+        self, motivo: str, resumo: str, telefone: str | None = None, numero_pedido: int | None = None
+    ) -> dict[str, Any]:
+        if motivo not in HANDOFF_REASONS:
+            raise ValueError(f"motivo desconhecido: {motivo}")
+        self.journal.record(
+            "encaminhamento",
+            self.session_id,
+            {"motivo": motivo, "resumo": resumo, "telefone": telefone, "numero_pedido": numero_pedido},
+        )
+        result = {"encaminhado": True, "encaminhado_para": "equipe de atendimento"}
+        if motivo == "reclamacao":
             result["prazo_de_retorno"] = COMPLAINT_RETURN_TIME
         return result
 
 
-def _shipping(subtotal: Decimal, pix_total: Decimal, city: str | None) -> dict:
+def _shipping(subtotal: Decimal, pix_total: Decimal, city: str | None) -> dict[str, Any]:
     if city is None:
         return {"frete": "Depende da cidade de entrega."}
     if normalize(city) != "campo grande":

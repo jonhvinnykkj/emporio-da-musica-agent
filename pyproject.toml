@@ -44,6 +44,7 @@ select = ["E", "F", "I", "B", "UP"]
 # Prompt and tool-description text is customer-facing prose kept on one line per sentence.
 "src/emporio/prompts.py" = ["E501"]
 "src/emporio/tools.py" = ["E501"]
+"src/emporio/manual.py" = ["E501"]
 
 [tool.mypy]
 files = ["src"]
