@@ -211,7 +211,7 @@ These runs also exposed scenario criteria that were too narrow. They were widene
 AI wrote most of this repository. The method was set by the candidate:
 
 1. One team of agents researched how to serve customers well. A second team tried to refute each claim. Of 27 claims, 7 were confirmed, 18 weakened and 2 refuted.
-2. An integrator corrected the material. The candidate approved 14 decisions. They are in `docs/logica-ideal.md`, which is the logic this project follows.
+2. An integrator corrected the material. The candidate approved 13 of the 14 decisions, and the persona's name was left to the orchestrator. They are in `docs/logica-ideal.md`, which is the logic this project follows.
 3. Builder and reviewer agents then implemented the work task by task, following the plan in `docs/superpowers/plans/`. Agents wrote the code, the tests and this README, using Claude Code.
 
 An earlier draft, written before the method existed, was rewritten from the new logic. The git history keeps it.
