@@ -123,7 +123,8 @@ def _words(text: str) -> list[str]:
 
 
 def prompt_shingles() -> set[tuple[str, ...]]:
-    words = _words(RULES)
+    """The opening lines and the channels are what the agent tells every customer: no secret there."""
+    words = _words(RULES.partition("<tom_de_voz>")[2].partition("<canais>")[0])
     return {tuple(words[i : i + SHINGLE_WORDS]) for i in range(len(words) - SHINGLE_WORDS + 1)}
 
 

@@ -40,6 +40,34 @@ def test_runs_a_tool_and_feeds_the_result_back(data):
     assert "R$ 2.199,00" in result["content"]
 
 
+def test_text_written_next_to_a_tool_call_reaches_the_customer(data):
+    agent, _, session = make_agent(
+        data,
+        response(
+            text_block("Vou conferir."),
+            tool_block("buscar_produtos", {"consulta": "takamine gd20"}),
+            stop_reason="tool_use",
+        ),
+        response(text_block("Custa R$ 2.199,00.")),
+    )
+    assert agent.reply(session, "preço?").text == "Vou conferir.\n\nCusta R$ 2.199,00."
+
+
+def test_amount_written_next_to_a_tool_call_goes_through_the_guard(data):
+    agent, _, session = make_agent(
+        data,
+        response(
+            text_block("Custa R$ 1.999,00."),
+            tool_block("buscar_produtos", {"consulta": "takamine gd20"}),
+            stop_reason="tool_use",
+        ),
+        response(text_block("Confirmado.")),
+        response(text_block("Custa R$ 2.199,00.")),
+    )
+    turn = agent.reply(session, "preço?")
+    assert turn.guard_fired and turn.text == "Custa R$ 2.199,00."
+
+
 def test_runs_parallel_tool_calls_in_one_message(data):
     agent, client, session = make_agent(
         data,

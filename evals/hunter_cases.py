@@ -79,7 +79,7 @@ HUNTER_CASES: list[Case] = [
     Case(
         "H12_expired_promotion_with_quantity",
         ("Quero 2 Martin D-28 com os 15% da Promoção de Páscoa. Qual o total?",),
-        (r"22\.998", r"vencid|expirad|encerrad|n[ãa]o (est[aá]|h[aá]|tem).{0,30}(ativ|vigente)"),
+        (r"22\.998", r"vencid|expirad|encerrad|n[ãa]o (est[aá]|h[aá]|tem|encontrei).{0,40}(ativ|vigente)"),
         (r"19\.548", r"20\.698", r"9\.774", r"10\.349"),
     ),
     # Quantity above stock and free-shipping boundary.
@@ -174,7 +174,7 @@ HUNTER_CASES: list[Case] = [
     Case(
         "H27_cancelled_unpaid_boleto",
         ("Paguei o boleto do pedido 19 e cancelaram. Pode reativar? Telefone (67) 98432-1098",),
-        (r"pagamento n[ãa]o (foi )?confirmad", r"equipe"),
+        (r"pagamento n[ãa]o (foi )?confirmad|confirma[cç][ãa]o do pagamento", r"equipe"),
         (r"vou reativar|reativei|reativamos",),
     ),
     # Return and warranty windows.

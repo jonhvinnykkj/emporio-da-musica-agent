@@ -18,7 +18,7 @@ from emporio.prompts import build_system, build_turn_content
 from emporio.tools import StoreData, Toolbox, tool_definitions
 
 DEFAULT_MODEL = "claude-haiku-5-5"
-DEFAULT_EFFORT = "low"
+DEFAULT_EFFORT = "medium"
 MAX_TOKENS = 4096
 MAX_TOOL_CALLS = 5
 MAX_MESSAGE_CHARS = 2000
@@ -145,12 +145,14 @@ class Agent:
 
     def _converse(self, session: Session, text: str, turn: Turn) -> str:
         evidence = [text, self.data.manual]
+        written: list[str] = []  # text beside a tool call counts too, so it is never lost nor unchecked
         while True:
             response = self._call_model(session, turn)
             if response.stop_reason in ("refusal", "max_tokens"):
                 raise TurnFailed(response.stop_reason)
             # The whole content goes back as it came, thinking blocks included.
             session.messages.append({"role": "assistant", "content": response.content})
+            written += [block.text.strip() for block in response.content if block.type == "text"]
             tool_uses = [block for block in response.content if block.type == "tool_use"]
             if tool_uses:
                 if len(turn.tool_calls) + len(tool_uses) > MAX_TOOL_CALLS:
@@ -158,7 +160,7 @@ class Agent:
                 results = [self._run_tool(session.toolbox, block, turn, evidence) for block in tool_uses]
                 session.messages.append({"role": "user", "content": results})
                 continue
-            answer = "".join(block.text for block in response.content if block.type == "text").strip()
+            answer = "\n\n".join(part for part in written if part)
             if not answer:
                 raise TurnFailed("empty answer")
             unsupported = unsupported_amounts(answer, evidence)
@@ -167,6 +169,7 @@ class Agent:
             if turn.guard_fired:
                 raise AmountsWithheld(unsupported)
             turn.guard_fired = True
+            written.clear()
             listed = ", ".join(str(amount) for amount in sorted(unsupported))
             correction = GUARD_CORRECTION.format(amounts=listed)
             session.messages.append({"role": "user", "content": [{"type": "text", "text": correction}]})

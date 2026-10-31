@@ -20,6 +20,31 @@ def test_describe(now, expected):
     assert expected in describe(now)
 
 
+@pytest.mark.parametrize(
+    "now, expected",
+    [
+        (datetime(2026, 10, 31, 14, 0), "segunda-feira, 02/11 é feriado, a loja não abre."),
+        (datetime(2026, 11, 2, 10, 0), "segunda-feira, 02/11 é feriado, a loja não abre."),
+        (datetime(2026, 12, 24, 19, 0), "sexta-feira, 25/12 é feriado, a loja não abre."),
+    ],
+)
+def test_describe_names_the_holiday_the_store_skips(now, expected):
+    assert expected in describe(now)
+
+
+@pytest.mark.parametrize(
+    "now",
+    [
+        datetime(2026, 10, 24, 14, 0),  # plain weekend
+        datetime(2026, 10, 28, 19, 0),  # plain weeknight
+        datetime(2026, 10, 28, 14, 0),  # open
+        datetime(2026, 11, 14, 14, 0),  # 15/11 is a Sunday: closed anyway, nothing to warn
+    ],
+)
+def test_describe_only_mentions_a_holiday_that_changes_the_answer(now):
+    assert "feriado" not in describe(now)
+
+
 @pytest.mark.parametrize("day", [date(2026, 11, 2), date(2026, 11, 20), date(2026, 4, 3), date(2027, 3, 26)])
 def test_national_holidays_include_finados_and_good_friday(day):
     assert is_holiday(day)

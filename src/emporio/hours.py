@@ -53,6 +53,13 @@ def next_opening(now: datetime) -> datetime:
     raise RuntimeError("no opening within two weeks")
 
 
+def skipped_holidays(now: datetime, opening: datetime) -> str:
+    """Warn about working days lost to a holiday, which the model would otherwise read as open."""
+    days = (now.date() + timedelta(days=offset) for offset in range((opening.date() - now.date()).days))
+    closed = [day for day in days if is_holiday(day) and day.weekday() in OPENING_HOURS]
+    return "".join(f" {WEEKDAYS[day.weekday()]}, {day:%d/%m} é feriado, a loja não abre." for day in closed)
+
+
 def describe(now: datetime) -> str:
     """Line for the system prompt, so the agent knows the time and can state the return time."""
     stamp = f"{WEEKDAYS[now.weekday()]}, {now:%d/%m/%Y}, {now:%H:%M} (horário de Campo Grande)"
@@ -65,5 +72,6 @@ def describe(now: datetime) -> str:
         opening = next_opening(now)
     weekday = WEEKDAYS[opening.weekday()]
     return (
-        f"Agora é {stamp}. A loja está fechada. A equipe volta {weekday}, {opening:%d/%m} às {opening:%H:%M}."
+        f"Agora é {stamp}. A loja está fechada.{skipped_holidays(now, opening)} "
+        f"A equipe volta {weekday}, {opening:%d/%m} às {opening:%H:%M}."
     )
