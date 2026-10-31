@@ -26,6 +26,7 @@ dev = ["pytest", "pytest-cov", "hypothesis", "ruff", "mypy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.coverage.run]
 source = ["src/emporio"]
@@ -35,7 +36,7 @@ fail_under = 90
 
 [tool.ruff]
 line-length = 110
-src = ["src", "tests"]
+src = ["src", "tests", "."]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
