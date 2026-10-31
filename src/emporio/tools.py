@@ -16,6 +16,7 @@ from emporio.pricing import brl, installment_text, metro_shipping
 
 MAX_FAILED_CHECKS = 3
 SEARCH_LIMIT = 5
+MAX_SEARCH_LIMIT = 15
 COMPLAINT_RETURN_TIME = "24 horas úteis"
 COMBINED_PAYMENT_ABOVE = Decimal("2000")
 HANDOFF_REASONS = ["reclamacao", "atendente", "sem_resposta", "aprovacao", "identidade", "outro"]
@@ -37,15 +38,19 @@ def tool_definitions(category_names: list[str]) -> list[dict[str, Any]]:
             "description": (
                 "Busca instrumentos no sistema e devolve disponibilidade, preço atual, promoção ativa, preço no PIX, "
                 "parcelamento e especificações. Use para qualquer pergunta sobre produto, preço, estoque ou promoção. "
-                "Mostra até 5 itens e informa o total encontrado. Itens indisponíveis que batem com a busca vêm em "
-                "'indisponiveis', com sugestões em 'alternativas'."
+                "Mostra 5 itens, ou mais com 'limite', e informa o total encontrado. Itens indisponíveis que batem com "
+                "a busca vêm em 'indisponiveis', com sugestões em 'alternativas'."
             ),
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "consulta": {
                         "type": "string",
-                        "description": "Marca, modelo ou característica. Ex.: 'takamine gd20', 'iniciante', 'choro'.",
+                        "description": (
+                            "As palavras do cliente sobre o item: marca, modelo, tamanho, cor ou uso. Os filtros não "
+                            "enxergam nada disso, então preencha sempre que ele disser mais que a categoria. "
+                            "Ex.: 'takamine gd20', 'ukulele concert', 'sunburst', 'iniciante', 'choro'."
+                        ),
                     },
                     "categoria": {"type": "string", "enum": category_names},
                     "preco_minimo": {"type": "number", "description": "Preço mínimo em reais."},
@@ -62,6 +67,10 @@ def tool_definitions(category_names: list[str]) -> list[dict[str, Any]]:
                     "somente_promocao": {
                         "type": "boolean",
                         "description": "true para listar só itens com promoção ativa.",
+                    },
+                    "limite": {
+                        "type": "integer",
+                        "description": "Quantos itens mostrar: 5 por padrão, até 15. Use 15 para listar todas as opções.",
                     },
                 },
                 "required": [],
@@ -184,6 +193,7 @@ class Toolbox:
         cordas: str | None = None,
         eletrico: bool | None = None,
         somente_promocao: bool = False,
+        limite: int = SEARCH_LIMIT,
     ) -> dict[str, Any]:
         return self.data.catalog.search(
             query=consulta,
@@ -193,7 +203,7 @@ class Toolbox:
             strings=cordas,
             electronics=eletrico,
             on_sale=somente_promocao,
-            limit=SEARCH_LIMIT,
+            limit=max(1, min(limite, MAX_SEARCH_LIMIT)),
         )
 
     def look_up_order(self, numero_pedido: int, telefone: str) -> dict[str, Any]:

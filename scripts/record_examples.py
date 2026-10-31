@@ -1,6 +1,6 @@
 """Record real conversations into examples/, with the tools each answer used.
 
-uv run python scripts/record_examples.py
+uv run python -m scripts.record_examples
 
 Needs a .env with ANTHROPIC_API_KEY. Scenarios 5, 4, 12, 16 and 20 of section 8 of docs/logica-ideal.md,
 with the store clock pinned to the one each scenario declares.

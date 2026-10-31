@@ -54,6 +54,13 @@ def test_search_on_sale_only_lists_promotions(box):
     assert result["produtos"] and all(p["promocao_ativa"] for p in result["produtos"])
 
 
+@pytest.mark.parametrize("limite, shown", [(15, 14), (999, 14), (0, 1), (-3, 1)])
+def test_search_shows_more_on_request_within_bounds(box, limite, shown):
+    result, _ = call(box, "buscar_produtos", categoria="Ukuleles", limite=limite)
+    assert result["total_encontrado"] == 14
+    assert len(result["produtos"]) == result["mostrando"] == shown
+
+
 def test_search_limits_to_five_and_reports_total(box):
     result, _ = call(box, "buscar_produtos")
     assert result["mostrando"] == len(result["produtos"]) == 5 and result["total_encontrado"] > 5

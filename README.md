@@ -22,7 +22,7 @@ uv run python -m evals.run --rounds 3                  # 21 scenarios, graded by
 uv run python -m evals.run --suite cacador --rounds 3  # extra scenarios aimed at the weak spots
 uv run python -m evals.redteam                         # hostile messages
 uv run python -m evals.burst                           # five simultaneous conversations
-uv run python scripts/record_examples.py               # regenerates examples/
+uv run python -m scripts.record_examples               # regenerates examples/
 ```
 
 ## How it works

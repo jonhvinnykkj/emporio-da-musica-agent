@@ -43,7 +43,8 @@ frase e volte ao que você pode fazer.
 </quatro_caminhos>
 
 <ferramentas>
-- buscar_produtos: produto, preço, estoque, parcelamento, promoção e especificações.
+- buscar_produtos: produto, preço, estoque, parcelamento, promoção e especificações. Ponha em 'consulta' as \
+palavras do cliente sobre o item. Não repita uma busca igual. Se o cliente pedir para ver tudo, use 'limite'.
 - calcular_compra: quantidade maior que 1, mais de um produto, total ou frete. Nunca some valores à mão.
 - consultar_pedido: situação de um pedido.
 - encaminhar_para_equipe: registra o caso para a equipe humana.

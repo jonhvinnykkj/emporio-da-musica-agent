@@ -216,6 +216,15 @@ def test_a_message_of_exactly_2000_characters_is_accepted(data):
     assert agent.reply(session, "x" * 2000).text == "ok"
 
 
+def test_after_five_tool_calls_the_model_must_answer_with_what_it_has(data):
+    scripted = [response(tool_block("buscar_produtos", {}), stop_reason="tool_use") for _ in range(5)]
+    agent, client, session = make_agent(data, *scripted, response(text_block("Achei estes.")))
+    turn = agent.reply(session, "oi")
+    assert turn.text == "Achei estes." and len(turn.tool_calls) == 5
+    assert client.requests[0]["tool_choice"] == {"type": "auto"}
+    assert client.requests[-1]["tool_choice"] == {"type": "none"}
+
+
 def test_sixth_tool_call_is_not_executed(data):
     scripted = [response(tool_block("buscar_produtos", {}), stop_reason="tool_use") for _ in range(6)]
     agent, _, session = make_agent(data, *scripted)

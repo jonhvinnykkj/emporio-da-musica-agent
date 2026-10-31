@@ -180,6 +180,8 @@ class Agent:
             max_tokens=MAX_TOKENS,
             system=self.system,
             tools=self.tools,
+            # At the cap the model answers with what it found, instead of the customer getting an error.
+            tool_choice={"type": "none" if len(turn.tool_calls) >= MAX_TOOL_CALLS else "auto"},
             messages=session.messages,
             output_config={"effort": self.effort},
         )

@@ -197,4 +197,30 @@ HUNTER_CASES: list[Case] = [
         (r"entreg|BRQM7890123BR",),
         (r"n[ãa]o (consegui|encontr)",),
     ),
+    # A customer describes the item instead of naming a model. Found on the real model: it set the
+    # filters, left the words out of the search and answered that the store had nothing.
+    Case(
+        "H31_size_word",
+        ("Vocês têm ukulele concert?",),
+        (r"Kala KA-C|Ohana CK-20|KAL-500C",),
+        (r"n[ãa]o (encontrei|consegui confirmar|temos|tem|achei|apareceu|aparece)", r"s[oó] consigo ver"),
+    ),
+    Case(
+        "H32_color_word",
+        ("Tem violão sunburst?",),
+        (r"Sunburst",),
+        (r"n[ãa]o (encontrei|temos|tem|achei)",),
+    ),
+    Case(
+        "H33_baritone_word",
+        ("Procuro um ukulele barítono, tem?",),
+        (r"Bar[ií]tono",),
+        (r"n[ãa]o (encontrei|temos|tem|achei)",),
+    ),
+    Case(
+        "H34_show_everything",
+        ("Me mostra todos os ukuleles que vocês têm.",),
+        (r"14|Soprano", r"Tenor", r"Concert", r"Bar[ií]tono"),
+        (r"s[oó] consigo ver",),
+    ),
 ]

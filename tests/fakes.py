@@ -32,7 +32,9 @@ def response(*blocks: Any, stop_reason: str = "end_turn") -> Any:
 
 
 def anthropic_error() -> anthropic.APIError:
-    return anthropic.APIConnectionError(request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"))
+    return anthropic.APIConnectionError(
+        request=httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    )
 
 
 def authentication_error() -> anthropic.AuthenticationError:
