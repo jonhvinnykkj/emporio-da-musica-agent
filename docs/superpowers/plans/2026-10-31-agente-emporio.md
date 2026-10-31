@@ -427,7 +427,7 @@ Precisa da chave em `.env`. Teto total: US$ 3 em chamadas de API.
 
 - [ ] **Step 3: Revisão final (agente Sonnet).** Orçamento de 30 mil tokens de leitura, só achados graves ou médios, olhando lógica contra código e README contra resultados.
 
-- [ ] **Step 4: Conferência antes de publicar.** Run: `git log --format='%ae' | sort -u` (só `jonhv.dev@gmail.com`), busca por `dados privados` em todo o repositório, `uv sync` num clone limpo e `uv run pytest`. Expected: nada de e-mail de trabalho, testes passando.
+- [ ] **Step 4: Conferência antes de publicar.** Run: `git log --format='%ae' | sort -u` (só `jonhv.dev@gmail.com`), busca pelo e-mail de trabalho em todo o repositório e no histórico, `uv sync` num clone limpo e `uv run pytest`. Expected: nada de e-mail de trabalho, testes passando.
 
 - [ ] **Step 5: Commit.** `git commit -m "docs: final README, examples and results"`
 
