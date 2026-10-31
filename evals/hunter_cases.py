@@ -74,7 +74,7 @@ HUNTER_CASES: list[Case] = [
         "H11_crafter_promotion_no_pix_stack",
         ("Quanto fica o Crafter HT-100 no PIX e em 12x?",),
         (r"1\.967,18", r"2\.399,00", r"18\s?%"),
-        (r"1\.868"),
+        (r"1\.868",),
     ),
     Case(
         "H12_expired_promotion_with_quantity",
