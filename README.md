@@ -188,6 +188,7 @@ These runs also exposed scenario criteria that were too narrow. They were widene
 - The CSVs are read at startup. Stock changes need a restart. Nothing reserves stock or places orders.
 - Order number plus phone is a weak identity check. With WhatsApp, the sender's number would replace it.
 - The `R$` check does not read amounts in words, dates, percentages or product names.
+- The `R$` check proves that an amount exists in the sources, not that it belongs to the product named. A swapped price, or an amount the customer typed, would pass. The logs of the final run show no wrong pairing across 1,052 amounts in passages that name a product, but the prompt and the computed tool fields hold that, not the check. In production, the model would cite a product id and the code would write the price.
 - Municipal and state holidays are missing.
 - No shipping value outside Campo Grande, because the data has no carrier rates or ZIP-code table.
 - The manual dates from June 2025 and mentions 300 instruments. The system covers the 65 that exist.
