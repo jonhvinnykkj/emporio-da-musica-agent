@@ -1,26 +1,26 @@
-"""Orders: identity check, customer-safe views and return-window rules."""
+"""Orders: phone identity check and customer-safe views."""
 
 import re
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 from emporio.catalog import Catalog, read_csv
 from emporio.pricing import brl
 
 STATUS_LABELS = {
-    "pending": "Aguardando confirmação do pagamento",
-    "confirmed": "Pagamento confirmado, em separação",
+    "pending": "Pendente",
+    "confirmed": "Confirmado",
     "shipped": "Enviado",
     "delivered": "Entregue",
     "cancelled": "Cancelado",
 }
 PAYMENT_LABELS = {"pix": "PIX", "boleto": "Boleto", "debit": "Cartão de débito"}
-STALLED_AFTER_DAYS = 10
-RETURN_WINDOW_DAYS = 7
-DEFECT_EXCHANGE_DAYS = 30
-LEGAL_WARRANTY_DAYS = 90
+STALLED_AFTER_DAYS = 15
+
+Day = date  # the Order.date field shadows the type inside the class body
 
 
 def payment_label(method: str) -> str:
@@ -45,12 +45,12 @@ def digits_of(text: str) -> str:
 class Order:
     id: int
     customer_id: int
-    date: date
+    date: Day
     status: str
     total: Decimal
     payment_method: str
     tracking_code: str
-    estimated_delivery: date | None
+    estimated_delivery: Day | None
     notes: str
     items: tuple[tuple[int, int], ...]  # (product_id, quantity)
 
@@ -58,42 +58,66 @@ class Order:
 class OrderBook:
     def __init__(self, data_dir: Path, catalog: Catalog):
         self.catalog = catalog
-        self.customers = {int(row["customer_id"]): row for row in read_csv(data_dir / "customers.csv")}
-        items: dict[int, list[tuple[int, int]]] = {}
-        for row in read_csv(data_dir / "order_items.csv"):
-            items.setdefault(int(row["order_id"]), []).append((int(row["product_id"]), int(row["quantity"])))
-        self.orders = {
-            int(row["order_id"]): Order(
-                id=int(row["order_id"]),
-                customer_id=int(row["customer_id"]),
-                date=parse_date(row["order_date"]),
-                status=row["status"],
-                total=Decimal(row["total_brl"]),
-                payment_method=row["payment_method"],
-                tracking_code=row["tracking_code"],
-                estimated_delivery=parse_date(row["estimated_delivery"]),
-                notes=row["notes"],
-                items=tuple(items.get(int(row["order_id"]), ())),
+        self.customers: dict[int, dict[str, str]] = dict(
+            read_csv(
+                data_dir / "customers.csv",
+                ("customer_id", "name", "phone"),
+                lambda row: (int(row["customer_id"]), dict(row)),
             )
-            for row in read_csv(data_dir / "orders.csv")
+        )
+        items: dict[int, list[tuple[int, int]]] = {}
+        item_rows = read_csv(
+            data_dir / "order_items.csv",
+            ("order_id", "product_id", "quantity"),
+            lambda row: (int(row["order_id"]), int(row["product_id"]), int(row["quantity"])),
+        )
+        for order_id, product_id, quantity in item_rows:
+            items.setdefault(order_id, []).append((product_id, quantity))
+        order_columns = (
+            "order_id",
+            "customer_id",
+            "order_date",
+            "status",
+            "total_brl",
+            "payment_method",
+            "tracking_code",
+            "estimated_delivery",
+            "notes",
+        )
+        self.orders: dict[int, Order] = {
+            order.id: order
+            for order in read_csv(
+                data_dir / "orders.csv", order_columns, lambda row: self._build_order(row, items)
+            )
         }
 
-    def verified_order(self, order_id: int, contact: str) -> Order | None:
-        """Return the order only if the contact is the one on file for its customer."""
+    @staticmethod
+    def _build_order(row: dict[str, str], items: dict[int, list[tuple[int, int]]]) -> Order:
+        order_id = int(row["order_id"])
+        return Order(
+            id=order_id,
+            customer_id=int(row["customer_id"]),
+            date=date.fromisoformat(row["order_date"]),
+            status=row["status"],
+            total=Decimal(row["total_brl"]),
+            payment_method=row["payment_method"],
+            tracking_code=row["tracking_code"],
+            estimated_delivery=parse_date(row["estimated_delivery"]),
+            notes=row["notes"],
+            items=tuple(items.get(order_id, ())),
+        )
+
+    def verified_order(self, order_id: int, phone: str) -> Order | None:
+        """Return the order only if the phone is the one on file for its customer.
+
+        E-mail never identifies anyone, and a partial number is refused.
+        """
         order = self.orders.get(order_id)
-        if order is None or not self._contact_matches(self.customers[order.customer_id], contact):
+        if order is None or not _phone_matches(self.customers[order.customer_id]["phone"], phone):
             return None
         return order
 
-    @staticmethod
-    def _contact_matches(customer: dict, contact: str) -> bool:
-        contact = contact.strip().lower()
-        if "@" in contact:
-            return contact == customer["email"].lower()
-        given, on_file = digits_of(contact).removeprefix("55"), digits_of(customer["phone"])
-        return len(given) >= 8 and on_file.endswith(given)
-
-    def view(self, order: Order, today: date) -> dict:
+    def view(self, order: Order, today: date) -> dict[str, Any]:
         """What may be said to the verified customer. No e-mail, phone or address."""
         customer = self.customers[order.customer_id]
         view = {
@@ -101,89 +125,38 @@ class OrderBook:
             "cliente_primeiro_nome": customer["name"].split()[0],
             "data_do_pedido": format_date(order.date),
             "status": STATUS_LABELS[order.status],
-            "total": brl(order.total),
+            "valor_registrado": brl(order.total),
             "pagamento": payment_label(order.payment_method),
             "itens": [
                 {"produto": self.catalog.products[product_id].name, "quantidade": quantity}
                 for product_id, quantity in order.items
             ],
+            "dias_desde_a_compra": (today - order.date).days,
+            "requer_atencao": _needs_attention(order, today),
         }
         if order.tracking_code:
             view["codigo_de_rastreio"] = order.tracking_code
         if order.estimated_delivery:
             view["previsao_de_entrega"] = format_date(order.estimated_delivery)
-        if order.notes:
-            view["observacao"] = order.notes
-        view |= self._alerts(order, today)
+            view["dias_desde_a_previsao"] = (today - order.estimated_delivery).days
+        if order.status == "cancelled" and order.notes:
+            view["motivo_cancelamento"] = order.notes
         return view
 
-    def _alerts(self, order: Order, today: date) -> dict:
-        if order.status == "shipped" and order.estimated_delivery and today > order.estimated_delivery:
-            return {"alerta": f"Entrega atrasada em {(today - order.estimated_delivery).days} dias."}
-        idle_days = (today - order.date).days
-        if order.status in ("pending", "confirmed") and idle_days > STALLED_AFTER_DAYS:
-            return {"alerta": f"Pedido sem movimentação há {idle_days} dias."}
-        return {}
 
-    def return_decision(self, order: Order, reason: str, today: date) -> dict:
-        """Apply manual section 4 with exact date arithmetic, so the model never counts days."""
-        if order.status == "cancelled":
-            return _decision(False, "O pedido já está cancelado, não há o que devolver.", "encaminhar_equipe")
-        if order.status in ("pending", "confirmed"):
-            return _decision(
-                False,
-                "O pedido ainda não foi enviado e o manual não define regra de cancelamento antes do envio.",
-                "encaminhar_equipe",
-            )
-        if order.status == "shipped":
-            return _decision(
-                False,
-                "O pedido ainda não foi recebido. Os prazos de devolução contam a partir do recebimento.",
-                "aguardar_recebimento",
-            )
-        # The data has no real delivery date, so the estimated one stands in for it.
-        received = order.estimated_delivery
-        days_since_receipt = (today - received).days
-        facts = {
-            "data_de_recebimento_considerada": format_date(received),
-            "dias_desde_o_recebimento": days_since_receipt,
-            "dias_desde_a_compra": (today - order.date).days,
-        }
-        if reason == "defeito":
-            return self._defect_decision(order, today, days_since_receipt) | facts
-        section = "4.1" if reason == "arrependimento" else "4.3"
-        if days_since_receipt <= RETURN_WINDOW_DAYS:
-            return (
-                _decision(True, f"Dentro do prazo de {RETURN_WINDOW_DAYS} dias.", "seguir_condicoes", section)
-                | facts
-            )
-        return (
-            _decision(False, f"Fora do prazo de {RETURN_WINDOW_DAYS} dias.", "informar_cliente", section)
-            | facts
-        )
-
-    @staticmethod
-    def _defect_decision(order: Order, today: date, days_since_receipt: int) -> dict:
-        if (today - order.date).days <= DEFECT_EXCHANGE_DAYS:
-            return _decision(True, "Dentro dos 30 dias de troca por defeito.", "seguir_condicoes", "4.2")
-        if days_since_receipt <= LEGAL_WARRANTY_DAYS:
-            return _decision(
-                True,
-                "Passou dos 30 dias de troca direta, mas está na garantia legal de 90 dias.",
-                "encaminhar_equipe",
-                "8.1",
-            )
-        return _decision(
-            False,
-            "Fora da troca direta e da garantia legal. "
-            "Pode valer a garantia do fabricante, e a loja pode intermediar.",
-            "oferecer_intermediacao",
-            "4.2 e 8.2",
-        )
+def _phone_matches(on_file: str, given: str) -> bool:
+    """Accept the full number in any format, with or without 0, +55 or the area code."""
+    digits = digits_of(given).removeprefix("0")
+    if len(digits) == 13:
+        digits = digits.removeprefix("55")
+    full = digits_of(on_file)
+    return digits in (full, full[-9:])
 
 
-def _decision(eligible: bool, reason: str, next_step: str, section: str | None = None) -> dict:
-    decision = {"elegivel": eligible, "motivo": reason, "proximo_passo": next_step}
-    if section:
-        decision["secao_do_manual"] = section
-    return decision
+def _needs_attention(order: Order, today: date) -> bool:
+    """Shipped past its estimate, or pending/confirmed for more than 15 calendar days."""
+    if order.status == "shipped":
+        return order.estimated_delivery is not None and today > order.estimated_delivery
+    if order.status in ("pending", "confirmed"):
+        return (today - order.date).days > STALLED_AFTER_DAYS
+    return False

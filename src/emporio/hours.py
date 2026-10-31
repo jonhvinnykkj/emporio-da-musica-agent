@@ -3,8 +3,6 @@
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-import holidays
-
 STORE_TZ = ZoneInfo("America/Campo_Grande")
 OPENING_HOURS = {weekday: (time(9), time(18)) for weekday in range(5)} | {5: (time(9), time(13))}
 WEEKDAYS = (
@@ -16,15 +14,34 @@ WEEKDAYS = (
     "sábado",
     "domingo",
 )
-_HOLIDAYS = holidays.Brazil(subdiv="MS")
+# National holidays by (month, day). Good Friday moves with Easter and is computed below.
+FIXED_HOLIDAYS = frozenset({(1, 1), (4, 21), (5, 1), (9, 7), (10, 12), (11, 2), (11, 15), (11, 20), (12, 25)})
 
 
 def store_now() -> datetime:
     return datetime.now(STORE_TZ).replace(tzinfo=None)
 
 
+def easter(year: int) -> date:
+    """Gregorian Easter Sunday (anonymous algorithm)."""
+    century, rest = divmod(year, 100)
+    leap_cycles, leap_rest = divmod(century, 4)
+    moon_shift = (century + 8) // 25
+    correction = (century - moon_shift + 1) // 3
+    epact = (19 * (year % 19) + century - leap_cycles - correction + 15) % 30
+    weeks, week_rest = divmod(rest, 4)
+    weekday_offset = (32 + 2 * leap_rest + 2 * weeks - epact - week_rest) % 7
+    shift = ((year % 19) + 11 * epact + 22 * weekday_offset) // 451
+    month, day = divmod(epact + weekday_offset - 7 * shift + 114, 31)
+    return date(year, month, day + 1)
+
+
+def is_holiday(day: date) -> bool:
+    return (day.month, day.day) in FIXED_HOLIDAYS or day == easter(day.year) - timedelta(days=2)
+
+
 def hours_on(day: date) -> tuple[time, time] | None:
-    return None if day in _HOLIDAYS else OPENING_HOURS.get(day.weekday())
+    return None if is_holiday(day) else OPENING_HOURS.get(day.weekday())
 
 
 def next_opening(now: datetime) -> datetime:
