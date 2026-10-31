@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT / "data"
 DB_PATH = ROOT / ".emporio" / "emporio.sqlite3"
 EXIT_WORDS = {"/sair", "sair", "exit", "quit"}
+MISSING_KEY = "Chave inválida ou ausente: defina ANTHROPIC_API_KEY no arquivo .env (veja .env.example)."
 
 
 def print_trace(turn: Turn) -> None:
@@ -47,7 +48,12 @@ def main() -> None:
         try:
             turn = agent.reply(session_id, text)
         except anthropic.AuthenticationError:
-            raise SystemExit("Chave inválida ou ausente: defina ANTHROPIC_API_KEY no arquivo .env.")
+            raise SystemExit(MISSING_KEY)
+        except TypeError as error:
+            # The SDK raises TypeError, not an API error, when it finds no credential at all.
+            if "authentication" not in str(error):
+                raise
+            raise SystemExit(MISSING_KEY)
         except anthropic.APIError as error:
             print(f"Tom: Estou com instabilidade agora, tenta de novo em instantes. ({type(error).__name__})\n")
             continue
