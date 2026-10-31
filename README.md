@@ -13,7 +13,7 @@ uv run emporio --debug                # chat in the terminal; --debug shows tool
 uv run pytest --cov=src/emporio       # no key needed: the model is replaced by a scripted fake
 ```
 
-Optional variables in `.env`: `EMPORIO_MODEL` (default `claude-haiku-5-5`), `EMPORIO_EFFORT` (default `low`) and `EMPORIO_NOW`, which pins the store clock (for example `2026-10-31T14:00:00`).
+Optional variables in `.env`: `EMPORIO_MODEL` (default `claude-haiku-5-5`), `EMPORIO_EFFORT` (default `medium`) and `EMPORIO_NOW`, which pins the store clock (for example `2026-10-31T14:00:00`).
 
 The proofs with the real model need a key. They read only this project's `.env`, stop on a missing key, and stop when the spending cap (`--budget`, in US$) is reached. Each suite writes its own file in `evals/results/`.
 
