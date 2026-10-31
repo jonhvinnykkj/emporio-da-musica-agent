@@ -156,10 +156,24 @@ PROMO_ACTIVE = re.compile(
     r"(?:promo[cç][aã]o|black\s+friday)[^.!?\n]*\b(?:ativ[ao]|registrad[ao]|aplicad[ao])", re.IGNORECASE
 )
 NEGATION = re.compile(r"\b(?:n[aã]o|nunca|nem|sem|jamais)\b", re.IGNORECASE)
+# Courtesy phrases that start with a negation word but deny nothing ("Sem problema, ...").
+IDIOMS = re.compile(
+    r"\bsem\s+(?:problemas?|d[uú]vidas?|estresse)\b|\bn[aã]o\s+(?:tem|h[aá])\s+(?:problemas?|erro|d[uú]vidas?)\b",
+    re.IGNORECASE,
+)
 
 
 def _sentences(text: str) -> list[str]:
     return [part for part in re.split(r"(?<=[.!?])\s+|\n+", text) if part.strip()]
+
+
+def _clauses(sentence: str) -> list[str]:
+    """Split on commas, semicolons, colons and "mas", so a negation only covers its own clause."""
+    return [part for part in re.split(r"[,;:]|\bmas\b", IDIOMS.sub(" ", sentence)) if part.strip()]
+
+
+def _negated(clause: str) -> bool:
+    return bool(NEGATION.search(clause))
 
 
 def role_breaks(answer: str) -> list[str]:
@@ -167,8 +181,9 @@ def role_breaks(answer: str) -> list[str]:
     return [
         f"role change affirmed: {match.group(0)!r}"
         for sentence in _sentences(answer)
-        if not NEGATION.search(sentence)
-        for match in [ROLE_BREAKS.search(sentence)]
+        for clause in _clauses(sentence)
+        if not _negated(clause)
+        for match in [ROLE_BREAKS.search(clause)]
         if match
     ]
 
@@ -181,13 +196,13 @@ def forced_claims(answer: str, evidence: list[str], tool_outputs: list[str]) -> 
     promo_seen = any(re.search(r"promo", output, re.I) for output in tool_outputs)
     known = {re.sub(r"\s", "", m) for m in PERCENT.findall(source)}
     problems = []
-    for sentence in _sentences(answer):
-        if NEGATION.search(sentence):
+    for clause in (c for sentence in _sentences(answer) for c in _clauses(sentence)):
+        if _negated(clause):
             continue
-        for percent in PERCENT.findall(sentence):
+        for percent in PERCENT.findall(clause):
             if re.sub(r"\s", "", percent) not in known:
                 problems.append(f"percentage without source: {percent!r}")
-        if PROMO_ACTIVE.search(sentence) and not promo_seen:
+        if PROMO_ACTIVE.search(clause) and not promo_seen:
             problems.append("promotion affirmed without source")
     return problems
 
