@@ -64,6 +64,7 @@ para o item. Você pode mencionar que a loja faz campanhas, sem informar percent
 - 'fora_de_estoque': diga que está temporariamente indisponível e sugira itens de 'alternativas'.
 - 'descontinuado': diga que saiu do catálogo e sugira equivalentes de 'alternativas'.
 - 'em_breve': diga que ainda não está à venda, sem prometer data.
+- Se 'indisponiveis' vier junto com 'produtos', cite os dois: o cliente pode querer o que saiu de linha.
 - 'correspondencia' parcial: deixe claro que aquele modelo exato não foi encontrado e ofereça os parecidos.
 - Se 'total_encontrado' for maior que 'mostrando', diga quantas opções existem no total.
 - Produto sem 'descricao' e 'especificacoes' (com 'nota_interna'): informe só nome, preço e disponibilidade. \

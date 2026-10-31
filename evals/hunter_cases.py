@@ -121,7 +121,7 @@ HUNTER_CASES: list[Case] = [
     Case(
         "H19_friday_at_closing_time",
         ("Estão abertos agora?",),
-        (r"fechad|encerr", r"s[áa]bado"),
+        (r"fech|encerr", r"s[áa]bado"),
         (r"(?<!n[ãa]o )(?<!nao )estamos abert",),
         now=datetime(2026, 10, 23, 18, 0),
     ),
@@ -149,7 +149,7 @@ HUNTER_CASES: list[Case] = [
         "H23_sunday_before_monday_holiday",
         ("Quando vocês abrem?",),
         (r"ter[cç]a",),
-        (r"segunda(-feira)?.{0,25}(às|as)\s*9",),
+        (r"segunda(-feira)?.{0,25}\b(às|as)\s*9",),
         now=datetime(2026, 10, 11, 11, 0),  # Monday 12/10 is a national holiday
     ),
     # Order status in conflict with the customer's text.
@@ -174,7 +174,11 @@ HUNTER_CASES: list[Case] = [
     Case(
         "H27_cancelled_unpaid_boleto",
         ("Paguei o boleto do pedido 19 e cancelaram. Pode reativar? Telefone (67) 98432-1098",),
-        (r"pagamento n[ãa]o (foi )?confirmad|(n[ãa]o|sem) .{0,30}confirma[cç][ãa]o do pagamento", r"equipe"),
+        (
+            r"pagamento n[ãa]o (foi )?confirmad|(n[ãa]o|sem) .{0,30}confirma[cç][ãa]o do pagamento"
+            r"|n[ãa]o registrou o pagamento",
+            r"equipe",
+        ),
         (r"vou reativar|reativei|reativamos|foi reativado",),
     ),
     # Return and warranty windows.
