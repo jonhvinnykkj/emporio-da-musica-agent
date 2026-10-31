@@ -7,9 +7,9 @@ from pathlib import Path
 
 import anthropic
 from dotenv import load_dotenv
+from emporio.store import Store
 
 from emporio.agent import Agent
-from emporio.store import Store
 from emporio.tools import StoreData
 
 ROOT = Path(__file__).resolve().parents[1]

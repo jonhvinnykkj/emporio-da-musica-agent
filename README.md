@@ -11,10 +11,10 @@ Requires [uv](https://docs.astral.sh/uv/) and an [Anthropic API key](https://con
 ```bash
 uv sync
 cp .env.example .env          # then fill in ANTHROPIC_API_KEY
-uv run emporio --trace        # chat in the terminal; --trace shows each tool call
+uv run emporio --debug        # chat in the terminal; --debug shows tools, guard, tokens and time
 ```
 
-Resume a conversation with `uv run emporio --session <id>`. Everything else needs no key:
+Everything else needs no key:
 
 ```bash
 uv run pytest                 # unit tests, model replaced by a scripted fake

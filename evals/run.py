@@ -6,9 +6,9 @@ from pathlib import Path
 
 import anthropic
 from dotenv import load_dotenv
+from emporio.store import Store
 
 from emporio.agent import Agent, Turn
-from emporio.store import Store
 from emporio.tools import StoreData
 from evals.cases import CASES, Case
 
