@@ -55,6 +55,11 @@ class Quote:
         """PIX discount does not stack on promotional prices (manual section 6.2)."""
         return None if self.has_promotion else to_money(self.price * (1 - PIX_DISCOUNT))
 
+    def pix_total(self, quantity: int) -> Decimal:
+        """Discount the whole line, not each unit, so rounding cannot add cents to a larger order."""
+        total = self.price * quantity
+        return total if self.has_promotion else to_money(total * (1 - PIX_DISCOUNT))
+
     def to_dict(self) -> dict:
         if self.has_promotion:
             return {
