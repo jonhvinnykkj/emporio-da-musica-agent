@@ -1,8 +1,6 @@
 # Empório da Música: customer-service agent
 
-Text-message agent for a fictional musical instrument store in Campo Grande/MS. "Tom" answers
-customers in Brazilian Portuguese, looks up products, promotions and orders in the store's data,
-applies the rules of its policy manual, and hands off to the team when it should.
+"Tom" is a text-message agent for a fictional musical instrument store in Campo Grande/MS. It answers in Brazilian Portuguese, reads prices, stock, promotions and orders from the store's CSV files, applies the policy manual, and hands off to the team when it should.
 
 ## Run it
 
@@ -10,179 +8,202 @@ Requires [uv](https://docs.astral.sh/uv/) and an [Anthropic API key](https://con
 
 ```bash
 uv sync
-cp .env.example .env          # then fill in ANTHROPIC_API_KEY
-uv run emporio --debug        # chat in the terminal; --debug shows tools, guard, tokens and time
+cp .env.example .env                  # then set ANTHROPIC_API_KEY
+uv run emporio --debug                # chat in the terminal; --debug shows tools, guard, tokens, time
+uv run pytest --cov=src/emporio       # no key needed: the model is replaced by a scripted fake
 ```
 
-Everything else needs no key:
+Optional variables in `.env`: `EMPORIO_MODEL` (default `claude-haiku-5-5`), `EMPORIO_EFFORT` (default `low`) and `EMPORIO_NOW`, which pins the store clock (for example `2026-10-31T14:00:00`).
+
+The proofs with the real model need a key. They read only this project's `.env`, stop on a missing key, and stop when the spending cap (`--budget`, in US$) is reached. Each suite writes its own file in `evals/results/`.
 
 ```bash
-uv run pytest                 # unit tests, model replaced by a scripted fake
-uv run python -c "from pathlib import Path; from emporio.catalog import Catalog; from emporio.orders import OrderBook; from emporio.data_audit import find_inconsistencies as f; d = Path('data'); c = Catalog(d); print(*f(c, OrderBook(d, c)), sep='\n')"   # contradictions found in the data
+uv run python -m evals.run --rounds 3                  # 21 scenarios, graded by code
+uv run python -m evals.run --suite cacador --rounds 3  # extra scenarios aimed at the weak spots
+uv run python -m evals.redteam                         # hostile messages
+uv run python -m evals.burst                           # five simultaneous conversations
+uv run python scripts/record_examples.py               # regenerates examples/
 ```
-
-With a key, `uv run python -m evals.run` runs the scenarios against the real model and
-`uv run python scripts/record_examples.py` regenerates `examples/`. Set `EMPORIO_MODEL` and
-`EMPORIO_EFFORT` to change the model or effort, and `EMPORIO_NOW` to pin the clock.
 
 ## How it works
 
-```
-customer message
-      │
-      ▼
-agent loop (src/emporio/agent.py)
-      │  sends: system prompt, clock, last 20 messages, tool definitions
-      ▼
-Claude ──asks for a tool──► Python tool ──► CSVs, manual sections, SQLite
-      ▲                          │
-      └──────── JSON result ─────┘
-      │
-      ▼ final text
-amount check: every R$ value must come from this turn's tools or from the customer
-      │
-      ▼
-reply, saved as plain text in SQLite
-```
+One message goes through these steps:
 
-| Tool | Purpose |
+1. The code drops empty input and input over 2,000 characters.
+2. The code puts the clock (date, time in `America/Campo_Grande`, open or closed, next opening) at the start of the customer's message.
+3. The model answers, asks for a missing detail, calls a tool, or declines.
+4. The code validates the tool arguments, runs the tool and returns JSON. At most 5 tool calls per turn.
+5. The model writes the answer from the returned fields.
+6. The code checks every amount written as `R$`. An amount that is not in this turn's tool results, in the manual or in the customer's message goes back to the model once. If it fails again, the customer gets a fixed safe reply and the case is forwarded.
+7. The code logs the exchange to JSONL with phone numbers masked.
+
+If the API or a tool fails, the turn is rolled back, so the history never holds a tool request without its answer. The customer gets a fixed message with the store's phone and WhatsApp.
+
+| Tool | What it does |
 |---|---|
-| `search_products` | Catalog search with price and spec filters; returns availability, price, PIX and installments |
-| `list_promotions` | Active promotions; tells when a campaign the customer cites has ended |
-| `quote_order` | Totals for several items: PIX, installments, shipping |
-| `get_order` | Order status, after an identity check |
-| `check_return` | Return, exchange and warranty decision with exact date arithmetic |
-| `read_policy` | Reads manual sections by number |
-| `open_ticket` | Registers a case for the human team and returns a protocol |
+| `buscar_produtos` | Catalog search by text, category and price. Returns availability, price, PIX and installments already computed. Shows up to 5 items and states the total. |
+| `calcular_compra` | Quantity or several products: subtotal, PIX total, installments and shipping (Campo Grande only). |
+| `consultar_pedido` | Order status. Needs the order number and the phone on file. |
+| `encaminhar_para_equipe` | Writes a handoff to a file. It changes no store data. |
 
 ## Technical decisions
 
-**Approach: function calling with narrow, typed tools, without a framework.** Questions about prices,
-stock and orders have one exact answer, so they should be queries, not semantic search. I ruled out a
-text-to-SQL agent because the database holds customer phones and e-mails: with typed tools, a prompt
-injection has nothing to reach, since no tool can list customers. I also left out LangChain and similar
-frameworks. The loop in `agent.py` is short, and in an agent this small it is easier to read and test
-directly.
+**Single agent.** The case is small: 65 products, 20 orders, one short manual. Nothing runs in parallel and nothing overflows the context. One message often mixes data and policy ("how much is the C40, and can I exchange it?"). Discarded: a supervisor with specialists, and a router that only unlocks tools. Both add hops for the same message. We found no measured comparison between a single agent and a multi-agent design for customer service. This is an engineering argument, not a measurement.
 
-**Model: Claude through the official SDK.** It supports strict tool schemas, and prompt caching makes
-the fixed system prompt cheap across turns. The default is `claude-opus-5-5` at low effort; the model
-is one environment variable. The tools know nothing about the provider, so changing vendor means
-changing the client in `agent.py`.
+**Provider SDK directly, no framework.** The whole of `src/emporio/agent.py` is about 200 lines. Discarded: LangGraph and LangChain. This loop is already a graph with three nodes: model, tools, and the check on amounts, with an edge back from the check to the model and another from the model to the tools. LangGraph would draw the same graph and add a dependency. It would pay off if there were branches that run in parallel, state that must survive a restart, a human approval step in the middle of a run, or several agents. None of these exists here.
 
-**Retrieval: section lookup, without embeddings.** The manual is small and already structured (28
-numbered sections, about 11,000 characters). The system prompt carries the table of contents and the
-model asks for sections by number. Sections stay whole, including tables and text that crosses pages,
-and every answer can be traced to the section read. Embeddings would add a dependency and chunking
-problems without improving recall at this size. With many or unstructured documents I would move to
-hybrid search.
+**Model: the smallest one that passes the proofs.** The default is Haiku 5.5 at low effort. The test order is Haiku 5.5, Sonnet 5.5, Opus 5.5, and the model chosen is the first that passes every scenario in 3 of 3 rounds. The choice comes from the proofs, not from preference. Both settings are environment variables.
 
-**Prompt strategy: the model talks, Python decides.** The prompt defines the persona and when to use
-each tool. Discounts, installment limits, shipping and return windows are computed in Python, so the
-model never does arithmetic or counts days. The prompt is split in two blocks: the stable part is
-cached, and the clock sits outside it so it does not invalidate the cache.
+**The whole manual in the context.** The manual has 8 pages and about 1,750 words. "Consult policies" means that the model reads the manual that is in its fixed context and the manual wins over the model's own knowledge. There is no policy tool, no RAG and no embeddings. Discarded: retrieval, which could bring the wrong section back, and a policy tool, which adds a call for text that already fits. At a much larger manual, search by keywords comes first, then embeddings.
 
-**Conversation history: SQLite, last 20 messages, text only.** A customer on a messaging channel
-returns hours later, so persistence helps. Tool results are deliberately not kept: prices and stock
-change, so each turn fetches facts again. This also enforces the manual's rule of never quoting
-without checking the system.
+**Code decides, the model talks.** Price, PIX, installments, shipping, availability, active promotion, clock, identity and limits are computed in Python. The model picks tools and writes the reply. Discarded: letting the model compute from the manual, and a text-to-SQL agent. A SQL agent would keep the business rules in the prompt and leave no clear trace.
 
-**Safety in code, not only in the prompt.**
-- Amount check: if a reply has an R$ value that did not come from this turn's tools or the customer,
-  it goes back to the model once, and is then replaced by an offer to confirm with the team.
-- Order data requires the order number plus the phone or e-mail on file. A wrong contact and a missing
-  order get the same answer, and three failures lock the session.
-- Tool results carry the customer's first name only, never contact data.
-- A model refusal or a runaway loop becomes a message pointing to the store's phone.
+**The clock goes inside the customer's message.** The system prompt never changes during a conversation. Changing it between turns would invalidate the cache and the reasoning blocks that are sent back with the history. Discarded: a clock line in `system`.
 
-**Interface: terminal.** The brief asks for the agent working correctly, and a CLI keeps the focus there.
+**Persistence: memory plus a JSONL log.** The history lives in memory for the session. The log keeps messages and handoffs with masked contact data. Discarded: a database, and resuming conversations across runs. For a terminal tool, resuming is not worth keeping more personal data.
 
-**Opening hours** use the `America/Campo_Grande` time zone (one hour behind Brasília) and Brazilian
-national and Mato Grosso do Sul holidays, so on Sunday, November 1, 2026 the agent knows the store
-reopens on Tuesday, after Finados.
+**Interface: terminal.** `--debug` shows the tools called. A web UI would cost more and would not change how the logic is judged.
 
-## Data problems found and how the agent handles them
+## Customer-service rules
 
-`emporio.data_audit.find_inconsistencies` reproduces these findings.
+Where a rule comes from the manual, the section is cited. Evidence for the rest is design judgement.
 
-| Finding | Decision |
+| Rule | Origin |
 |---|---|
-| Item 136 is discontinued with 13 in stock; item 130 is `coming_soon` with 2 in stock | Status wins: neither is offered and no price is shown |
-| Item 96 is active with zero stock | Reported as temporarily unavailable, with alternatives |
-| 7 descriptions name another brand (a "Music Man Bass" described as a Fender Jazz Bass) | Name and specs win; those descriptions are hidden and not searched |
-| Sopro and Cordas Orquestrais categories have no products, though the manual lists them | Agent says there are none today |
-| Manual claims 300+ instruments; the catalog has 65 | Agent does not repeat the claim |
-| Promotions have no dates, and some products have several expired rows | `is_active` is the only signal |
-| Orders 3 and 20 have totals that differ from their items | The recorded total is what the customer paid; nothing is recomputed |
-| Five PIX orders show no 5% discount; orders 9, 16 and 18 exceed the installment limits | Historical records, reported here for the store to review |
-| Orders 3 and 14 contain an item that is `coming_soon` | Order data is shown as recorded |
-| Two customer records share an e-mail, and similar names exist | Name never identifies a customer |
-| Data stops in March 2026 | Orders from then look stalled or late under the real clock; the agent says so and offers a ticket |
+| Never state price, stock, deadline or status without a lookup | Manual 7.1 and 7.3 |
+| Complete answer in one message, one question at a time. For an order, ask for identification first | Design principle. Manual section 9 for orders |
+| Informal, warm tone, customer's name when known | Manual 7.1 and 7.2 |
+| Complaint: acknowledge the problem, state the fact, forward. Do not mirror emotion or pretend to feel it | Manual 7.3. Design choice on the wording |
+| The 24-business-hour return time applies to complaints only | Manual 7.3 |
+| A path to a person is always open | Manual 7.3 and 10 |
+| Introduce itself as a virtual assistant, never as a person | Manual section 7. Design choice |
+| Outside opening hours, keep answering and say when the team returns | Manual 2 and 7.1 |
+| Sold out or discontinued: say so and suggest an available alternative | Manual 7.3 |
+| Expired promotion: say so and show the current price | Manual 7.3 |
+| Promotional price always with original price and percentage | Manual 6.2 |
+
+## Traps in the data and the manual
+
+`emporio.data_audit.find_inconsistencies` finds the data problems at startup. `--debug` prints them.
+
+**Manual**
+
+| Trap | Decision |
+|---|---|
+| Phone 3341-4444 (cover and 1.2) against WhatsApp 3321-4500 (section 7) | Both, labelled by channel (D3) |
+| E-mail with and without an accent | The one without an accent. Not proven to be the valid one |
+| Installment table says R$ 100 minimum, section 3.1 gives tiers. 16 of 65 products change their maximum | Section 3.1 (D4) |
+| 30 days from purchase (4.2) against 90 days from receipt (8.1) | Different periods. The agent cites both. A defect between day 30 and 90 goes to the team |
+| 4.3 does not say when the 7 days of a preference exchange start | Cite as written. The team confirms |
+| Manual says 300 instruments, the CSV has 65. Manual dated June 2025 | The system is the truth for what exists |
+| Partner stores mentioned but not listed | None is named |
+| Black Friday and Semana do Músico appear in the manual, with no active promotion in the CSV | The agent may say the campaigns exist. No percentage, no date |
+| No online store link and no purchase path | "How do I buy?" goes to the team |
+
+**Products and promotions**
+
+| Trap | Decision |
+|---|---|
+| No product name contains "violão", "ukulele", "guitarra" or "baixo" | Search takes a category. Free text matches name and category |
+| Categories 6, 7 and 8 have no products | The tool says "category without products". The agent never says "we don't sell" and offers to check with the team |
+| Fuzzy search with no cut-off returned ukuleles for "saxofone" | Minimum similarity. Below it: not found |
+| Six products name a brand in the description that differs from the name; two have specs that contradict the description | Name and price stand. The six, plus the discontinued 136, show no description or specs. Technical detail goes to the team |
+| 136 is discontinued with 13 in stock | `available = status == "active" and stock > 0`. Status wins |
+| 113 is discontinued with stock 0. 96 is active with stock 0 | Same rule |
+| 130 is `coming_soon` with stock 2 and appears in two orders | Unavailable. No date promised. Past orders are not recalculated |
+| 20 of 25 promotion rows are inactive, some for the same product | Only `is_active = 1` counts. The 4 active ones do not collide |
+| The assignment's own example, the Takamine GD20, has an inactive 12% promotion | R$ 2,199.00, no discount |
+| Ohana CK-20 with 20% falls to R$ 439.20, under the free-shipping line | Free shipping is judged on the final value (D6) |
+
+**Orders and customers**
+
+| Trap | Decision |
+|---|---|
+| Order 8 shipped, delivery estimate 245 days past | Report the record and the delay, offer to forward |
+| Orders 9 to 16 pending or confirmed since February and March | `requer_atencao` computed in code (D7) |
+| The manual does not define `pending` or `confirmed` | Show the translated status without explaining it |
+| No tracking or estimate for pending, confirmed or cancelled orders | Say there is none yet. Invent nothing |
+| Orders 3 and 20 have a total different from the sum of their items | Do not recalculate |
+| In the 5 PIX orders the total equals the list price. No Campo Grande total under R$ 500 shows the R$ 35 shipping | Call it "recorded value", never "you paid". A dispute goes to the team |
+| Orders 9, 16 and 18 break the minimum installment of 3.1 | History is not precedent |
+| No field says whether a purchase was online, and 4.1 covers online purchases | Ask, or leave it to the team |
+| Delivered orders in Campo Grande carry a BR code, while 5.1 speaks of motorcycle couriers | Pass the code, name no carrier |
+| Customers 11 and 43 share an e-mail | E-mail identifies nobody. The phone is unique across the 50 customers |
+| Order ids 1 to 20, easy to try in sequence | Phone required, 3 failures per session lock lookup |
+| Saturday 31 October 2026, and Monday 2 November is a holiday (Finados) | National holidays in a list in the code (D8) |
+| Prompt injection | No suspicious text found in the CSVs. Every tool result is still treated as data |
 
 ## Assumptions
 
-The brief asks to assume, document and move on. The store should confirm these. Each one is attached
-to its manual section in `src/emporio/policies.py`.
+| # | Decision |
+|---|---|
+| D2 | The clock is the real one, in `America/Campo_Grande`, and can be pinned for tests (`EMPORIO_NOW`). With the real date, orders from February and March look late. |
+| D3 | Phone (67) 3341-4444 and WhatsApp (67) 3321-4500, because section 7 is the one about channels. |
+| D4 | Installments follow section 3.1: up to 3x with a R$ 50 minimum, 4x to 6x with R$ 80, 7x to 12x with R$ 100. "Except below R$ 50" is read as the R$ 50 minimum installment up to 3x. |
+| D5 | A check on `R$` amounts only. An amount written in words ("mil reais") escapes it. |
+| D6 | Free shipping in Campo Grande from R$ 500 on the final value. Below that, R$ 35. Other cities never get a value. |
+| D7 | `requer_atencao` is true for a shipped order with an overdue estimate, or pending or confirmed for more than 15 calendar days. The 15 is our choice, close to the longest standard shipping time. |
+| D8 | National holidays in a list in the code, with Good Friday computed. Municipal and state holidays are not covered. |
+| D9 | In-memory history plus a JSONL log. No conversation resume. |
 
-| Topic | Manual says | Assumption |
-|---|---|---|
-| Phone | (67) 3341-4444 in 1.2, (67) 3321-4500 in 7 | Use 3341-4444 |
-| E-mail | Spelled with and without an accent | Use `contato@emporiodamusica.com.br` |
-| Installments | Table: minimum R$ 100. Section 3.1: tiers | 3.1 is more specific and prevails |
-| Up to 3x | "No minimum (except below R$ 50)" | Installment cannot be below R$ 50 |
-| Defect, day 31 to 90 | 4.2 sends the customer to the manufacturer; 8.1 gives 90 days of legal warranty | Do not deny; forward to the team |
-| Return window | Counts from receipt, but there is no delivery date in the data | Use the estimated delivery date |
-| Online purchase | 4.1 is for online sales only; orders have no channel | Treat shipped orders as online |
-| Preference exchange | 7 days, no start date | Count from receipt |
-| Cancelling before shipping | Not covered | Open a ticket |
-| Shipping at exactly R$ 500 | "Above" and "below" R$ 500 | Free |
-| Metro region | Not defined | Only Campo Grande is confirmed |
-| "Desconto Exclusivo" | Audience not stated | Applies to any customer while active |
-| Partner stores | "Suggest when possible"; none listed | Never name a store |
+Also decided: the return deadline is counted in code, since `consultar_pedido` returns the days since purchase and since the delivery estimate. Without a receipt date in the data, the estimate stands in for it, and the agent says so.
 
-## Evaluation
+## Quality and evidence
 
-`evals/cases.py` holds scenarios that each pin one manual rule or data trap, checked with deterministic
-assertions on tools called and on the text of the answer. Latest run: [`evals/results.md`](evals/results.md).
+Everything here was measured in this repository.
+
+- **Tests:** 295, all passing. Coverage of `src/emporio` is 99.6% (`uv run pytest --cov=src/emporio`). CI also runs `ruff check` and `mypy src`.
+- **Mutation testing:** 405 of 416 mutants killed in `pricing`, `orders` and `guardrails`. The 11 survivors are field mutants in `OrderBook` that a test does assert. The tool credits them to the one test that built a shared fixture, so it never reruns that test against them.
+- **Property tests (hypothesis):** search, order verification, amount parsing, tool dispatch, phone masking and opening hours, on inputs nobody wrote by hand.
+- **Injected faults:** broken store data, API errors before and after a tool call, a tool that raises, a response with no blocks, a journal that cannot be written.
+- **Load with a simulated model:** 1,000 turns, 50 concurrent threads with separate sessions, and a 200-turn conversation. These use a scripted model and the real tools.
+- **Two real bugs found by this stress work.** `Catalog.search` raised on a price limit that was not a number (hypothesis found `{"preco_minimo": []}`). `mask_contact` left a phone whole when it was glued to a word, such as `whatsapp67996547821`.
+
+Real-model results:
+
+<!-- REAL-MODEL-RESULTS -->
 
 ## Known limitations
 
-- Data is read from CSV at startup. Stock changes need a restart, and nothing reserves stock or places orders.
-- Order number plus phone is a weak identity check. On WhatsApp the verified sender number should replace it.
-- The amount check covers money only. It does not verify dates or product names, and misses amounts written in words.
-- Municipal holidays are missing from the opening-hours logic.
-- Chat history has no expiry. A data-deletion request opens a ticket instead of deleting anything.
-- No tool answers shipping costs outside Campo Grande, because the data has no carrier rates.
+- The CSVs are read at startup. Stock changes need a restart. Nothing reserves stock or places orders.
+- Order number plus phone is a weak identity check. With WhatsApp, the sender's number would replace it.
+- The `R$` check does not read amounts in words, dates, percentages or product names.
+- Municipal and state holidays are missing.
+- No shipping value outside Campo Grande, because the data has no carrier rates or ZIP-code table.
+- The manual dates from June 2025 and mentions 300 instruments. The system covers the 65 that exist.
+- History is not cut. A very long conversation grows the request.
+- The log masks phones and e-mails. A name written in free text is not masked.
 
 ## With more time
 
-- Connect a WhatsApp webhook and a real database, with the sender's number as verified identity.
-- Build the team's inbox for tickets and let an attendant take over a conversation.
-- Grow the eval set from real conversations and run it in CI.
-- Add tracing and cost metrics per conversation.
-- Add automatic expiry and deletion of personal data.
+- A WhatsApp webhook, where the sender's number arrives verified.
+- A real database and a team inbox, with an attendant taking over a conversation.
+- A flow driven by code, with human approval, if the agent ever cancels or refunds.
+- Search by keywords, then embeddings, if the manual grows.
+- A grading set built from real conversations, run in CI.
+- Tracing and cost per conversation.
 
-## Use of AI coding assistants
+## How this was built
 
-I used **Claude Code** (model Claude Opus 5.5) as the main tool, and it wrote most of this repository.
-Every commit it took part in has a `Co-Authored-By` line.
+AI wrote most of this repository. The method was set by the candidate:
 
-Workflow:
-1. Claude Code read the brief, the manual and all CSVs and listed the contradictions before any code.
-2. It proposed the architecture and wrote the modules with their tests, in small commits.
-3. Tests and real runs corrected the work along the way. A test caught a one-cent PIX rounding error
-   on orders with quantity above one, and checking the extracted text showed the PDF library's default
-   mode returned one word per line.
+1. One team of agents researched how to serve customers well. A second team tried to refute each claim. Of 27 claims, 7 were confirmed, 18 weakened and 2 refuted.
+2. An integrator corrected the material. The candidate approved 14 decisions. They are in `docs/logica-ideal.md`, which is the logic this project follows.
+3. Builder and reviewer agents then implemented the work task by task, following the plan in `docs/superpowers/plans/`. Agents wrote the code, the tests and this README, using Claude Code.
 
-My part was setting the goal and constraints, reviewing the decisions and the result, and running the project.
+An earlier draft, written before the method existed, was rewritten from the new logic. The git history keeps it.
 
-## Repository
+The assignment asks for an explanation of AI use, and this section is that explanation. Every commit written with Claude Code carries a `Co-Authored-By` line.
+
+## Repository layout
 
 ```
-src/emporio/   agent.py (loop), tools.py, catalog.py, orders.py, pricing.py,
-               policies.py, hours.py, guardrails.py, prompts.py, store.py, cli.py
-tests/         unit tests, no API key needed
-evals/         scenarios for the real model and latest results
-examples/      recorded conversations
-scripts/       data audit and example recorder
-data/          store data as provided (fictional)
+src/emporio/   agent.py (loop), tools.py, catalog.py, orders.py, pricing.py, hours.py,
+               guardrails.py, journal.py, manual.py, prompts.py, data_audit.py, cli.py
+tests/         unit, property, fault-injection and load tests; no key needed
+evals/         scenarios, hunter cases, red team and burst; results in evals/results/
+examples/      recorded conversations (scenarios 5, 4, 12, 16, 20)
+scripts/       record_examples.py
+data/          store data and policy manual, as provided (fictional)
+docs/          logica-ideal.md (the logic) and superpowers/plans/ (the build plan)
 ```
