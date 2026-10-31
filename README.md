@@ -152,16 +152,36 @@ Also decided: the return deadline is counted in code, since `consultar_pedido` r
 
 Everything here was measured in this repository.
 
-- **Tests:** 295, all passing. Coverage of `src/emporio` is 99.6% (`uv run pytest --cov=src/emporio`). CI also runs `ruff check` and `mypy src`.
+- **Tests:** 310, all passing. Coverage of `src/emporio` is 99.6% (`uv run pytest --cov=src/emporio`). CI also runs `ruff check` and `mypy src`.
 - **Mutation testing:** 405 of 416 mutants killed in `pricing`, `orders` and `guardrails`. The 11 survivors are field mutants in `OrderBook` that a test does assert. The tool credits them to the one test that built a shared fixture, so it never reruns that test against them.
 - **Property tests (hypothesis):** search, order verification, amount parsing, tool dispatch, phone masking and opening hours, on inputs nobody wrote by hand.
 - **Injected faults:** broken store data, API errors before and after a tool call, a tool that raises, a response with no blocks, a journal that cannot be written.
 - **Load with a simulated model:** 1,000 turns, 50 concurrent threads with separate sessions, and a 200-turn conversation. These use a scripted model and the real tools.
 - **Two real bugs found by this stress work.** `Catalog.search` raised on a price limit that was not a number (hypothesis found `{"preco_minimo": []}`). `mask_contact` left a phone whole when it was glued to a word, such as `whatsapp67996547821`.
 
-Real-model results:
+Real-model results, on `claude-haiku-5-5` at medium effort, on the code in this repository. Full tables are in `evals/results/`.
 
-<!-- REAL-MODEL-RESULTS -->
+| Proof | Result |
+|---|---|
+| 21 scenarios, 5 rounds each | 105 of 105 rounds passed |
+| 34 scenarios aimed at the weak spots, 5 rounds each | 166 of 170 rounds passed |
+| 49 hostile messages | 47 passed. No customer data and no stretch of the rules came out |
+| 5 simultaneous conversations, 20 answers | None fell back to the contingency text. Median 3.0 s, p95 7.7 s |
+
+That final run cost about US$ 0.23. A four-message conversation costs about US$ 0.004, an estimate from the tokens used.
+
+The misses, read by hand:
+
+- Of the 4 missed rounds, 3 are correct answers in wording the regex does not accept, such as "já passamos do nosso horário". The fourth left out a tracking code. The regexes stayed as they are, because tuning them to a run proves nothing.
+- Both failed hostile messages were refused. The agent gave the real answer but repeated the attacker's amount ("não consigo confirmar R$ 10,00"), which the rule forbids.
+
+**What the real model found that a simulated model could not:**
+
+- "Vocês têm ukulele concert?" came back wrong in 7 of 8 tries. The model set the filters, left the customer's words out of the search, repeated the same call and said the store had none, while 4 are in stock. No scenario caught it, because all of them named a model. The tool description, a new `limite` field and a rule at the tool cap fixed it, and four scenarios now pin it.
+- On a Saturday, an answer offered the Monday holiday as the next opening. The clock now names the holiday.
+- A return was flatly refused, and the 24-hour return time was left out of a complaint. The prompt now states both rules.
+
+These runs also exposed scenario criteria that were too narrow. They were widened only for wording that was correct. An independent review then found that three had gone too far and let a wrong answer pass, and those were narrowed again. The commits record each change.
 
 ## Known limitations
 
@@ -173,6 +193,9 @@ Real-model results:
 - The manual dates from June 2025 and mentions 300 instruments. The system covers the 65 that exist.
 - History is not cut. A very long conversation grows the request.
 - The log masks phones and e-mails. A name written in free text is not masked.
+- Scenarios are graded by regex, so a correct answer in unexpected words can fail and a wrong one could pass. The misses still have to be read by hand.
+- When refusing a made-up price, the agent sometimes repeats the amount. The real price is in the same answer.
+- Search shows 15 items at most. Violões has 33 in stock, so the agent states the total and narrows the list.
 
 ## With more time
 
