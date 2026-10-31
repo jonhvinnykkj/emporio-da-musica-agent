@@ -87,8 +87,16 @@ def test_lock_blocks_even_the_right_phone(box):
 
 def test_two_failures_do_not_lock(box):
     for _ in range(MAX_FAILED_CHECKS - 1):
-        call(box, "consultar_pedido", numero_pedido=8, telefone=WRONG_PHONE)
+        answer, _ = call(box, "consultar_pedido", numero_pedido=8, telefone=WRONG_PHONE)
+        assert "bloqueado" not in answer
     assert call(box, "consultar_pedido", numero_pedido=8, telefone=ANA_PHONE)[0]["verificado"] is True
+
+
+def test_the_failure_that_reaches_the_limit_already_reports_the_lock(box):
+    answers = [call(box, "consultar_pedido", numero_pedido=8, telefone=WRONG_PHONE)[0] for _ in range(3)]
+    assert MAX_FAILED_CHECKS == 3
+    assert all("bloqueado" not in answer for answer in answers[:-1])
+    assert answers[-1]["bloqueado"] is True
 
 
 def test_failures_are_counted_per_toolbox(data, journal_path):

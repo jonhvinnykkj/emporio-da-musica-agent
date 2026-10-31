@@ -121,6 +121,25 @@ def test_api_failure_after_a_tool_call_leaves_no_dangling_request(data, kind):
     assert [m["role"] for m in client.requests[2]["messages"]] == ["user"]
 
 
+def test_unexpected_tool_exception_reverts_the_turn_and_is_journaled(data, monkeypatch):
+    agent, _, session = make_agent(
+        data,
+        response(tool_block("buscar_produtos", {"consulta": "c40"}), stop_reason="tool_use"),
+        response(text_block("Pronto.")),
+    )
+
+    def explode(*args, **kwargs):
+        raise AttributeError("unexpected")
+
+    monkeypatch.setattr(agent.data.catalog, "search", explode)
+    assert agent.reply(session, "c40?").text == FALLBACK_TEXT
+    assert session.messages == []
+    errors = [payload for kind, _, payload in agent.journal.events if kind == "erro"]
+    assert errors and errors[0]["motivo"] == "AttributeError"
+    monkeypatch.undo()
+    assert agent.reply(session, "e agora?").text == "Pronto."
+
+
 def test_response_without_blocks_gives_the_fallback(data):
     agent, _, session = make_agent(data, response())
     assert agent.reply(session, "oi").text == FALLBACK_TEXT and session.messages == []

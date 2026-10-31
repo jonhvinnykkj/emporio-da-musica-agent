@@ -133,6 +133,10 @@ class Agent:
             listed = ", ".join(str(amount) for amount in sorted(withheld.amounts))
             summary = f"Resposta com valor sem fonte bloqueada ({listed}). Cliente: {text}"
             session.toolbox.hand_off("outro", summary)
+        except Exception as error:  # noqa: BLE001 - any tool or data failure must not kill the chat
+            del session.messages[start:]
+            turn.text = FALLBACK_TEXT
+            self.journal.record("erro", session.id, {"motivo": type(error).__name__, "detalhe": str(error)})
 
         turn.seconds = time.perf_counter() - started
         self._log(session, text, turn)

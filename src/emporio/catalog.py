@@ -154,7 +154,9 @@ class Product:
             data["descricao"] = self.description
             data["especificacoes"] = self.specs
         else:
-            data["nota_interna"] = "Descrição do cadastro diverge do nome. Use só nome e especificações."
+            data["nota_interna"] = (
+                "Sem descrição nem especificações confiáveis; para detalhe técnico, encaminhe para a equipe."
+            )
         return data
 
 

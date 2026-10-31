@@ -203,7 +203,7 @@ class Toolbox:
         order = self.data.orders.verified_order(numero_pedido, telefone)
         if order is None:
             self.failed_checks += 1
-            return NOT_VERIFIED
+            return LOCKED if self.failed_checks >= MAX_FAILED_CHECKS else NOT_VERIFIED
         return {"verificado": True} | self.data.orders.view(order, self.clock().date())
 
     def quote_purchase(self, itens: list[dict[str, Any]], cidade: str | None = None) -> dict[str, Any]:

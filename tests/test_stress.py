@@ -98,7 +98,7 @@ def test_fifty_threads_do_not_mix_sessions(data, tmp_path):
     assert not failures
     for worker, texts in outcomes.items():
         if worker % 2 == 0:
-            assert texts[:3] == ["Não achei esse pedido."] * 3 and set(texts[3:]) == {LOCKED_MESSAGE}
+            assert texts[:2] == ["Não achei esse pedido."] * 2 and set(texts[2:]) == {LOCKED_MESSAGE}
         else:
             assert all(text.startswith("Encontrei") for text in texts)
 
