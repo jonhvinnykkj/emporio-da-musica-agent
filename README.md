@@ -70,7 +70,7 @@ is one environment variable. The tools know nothing about the provider, so chang
 changing the client in `agent.py`.
 
 **Retrieval: section lookup, without embeddings.** The manual is small and already structured (28
-numbered sections, about 13,000 characters). The system prompt carries the table of contents and the
+numbered sections, about 11,000 characters). The system prompt carries the table of contents and the
 model asks for sections by number. Sections stay whole, including tables and text that crosses pages,
 and every answer can be traced to the section read. Embeddings would add a dependency and chunking
 problems without improving recall at this size. With many or unstructured documents I would move to
