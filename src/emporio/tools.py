@@ -258,10 +258,15 @@ class Toolbox:
         return result
 
 
+def _is_campo_grande(city: str) -> bool:
+    """Accept 'Campo Grande', '... - MS', '.../MS' and 'campo grande ms'; nothing else."""
+    return normalize(city) in {"campo grande", "campo grande ms"}
+
+
 def _shipping(subtotal: Decimal, pix_total: Decimal, city: str | None) -> dict[str, Any]:
     if city is None:
         return {"frete": "Depende da cidade de entrega."}
-    if normalize(city) != "campo grande":
+    if not _is_campo_grande(city):
         return {"frete": "Calculado pelo CEP de destino. Itens grandes podem exigir cotação individual."}
     fee = metro_shipping(subtotal)
     return {

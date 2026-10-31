@@ -169,10 +169,17 @@ def test_thinking_blocks_and_earlier_messages_are_resent_untouched(data):
     assert client.requests[2]["messages"][1]["content"][0] is thinking
 
 
-@pytest.mark.parametrize("text", ["", "   ", "x" * 2001])
-def test_invalid_input_never_reaches_the_model(data, text):
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("", "Não recebi sua mensagem. Pode escrever de novo?"),
+        ("   ", "Não recebi sua mensagem. Pode escrever de novo?"),
+        ("x" * 2001, "Sua mensagem ficou muito longa. Pode resumir em até 2000 caracteres?"),
+    ],
+)
+def test_invalid_input_never_reaches_the_model(data, text, expected):
     agent, client, session = make_agent(data)
-    assert agent.reply(session, text).text
+    assert agent.reply(session, text).text == expected
     assert client.requests == [] and session.messages == []
 
 

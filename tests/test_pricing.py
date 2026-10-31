@@ -40,13 +40,14 @@ def test_installments_follow_section_3_1_tiers(amount, expected):
 
 
 def test_pix_takes_five_percent_off_list_price():
-    assert quote(Decimal("2199")).pix_price == Decimal("2089.05")
+    assert quote(Decimal("2199")).to_dict()["preco_no_pix"] == "R$ 2.089,05"
 
 
 def test_pix_does_not_stack_on_a_promotion():
     promo = quote(Decimal("549"), 20, "Desconto Exclusivo")
     assert promo.price == Decimal("439.20")
-    assert promo.pix_price is None
+    assert "preco_no_pix" not in promo.to_dict()
+    assert promo.pix_total(1) == Decimal("439.20")
 
 
 def test_promotion_shows_original_price_and_percent():

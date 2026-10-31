@@ -216,3 +216,14 @@ def test_no_tool_exposes_customer_contact_data(box, data):
     )
     for customer in data.orders.customers.values():
         assert customer["email"] not in output and customer["phone"] not in output
+
+
+@pytest.mark.parametrize("city", ["Campo Grande", "Campo Grande - MS", "Campo Grande/MS", "campo grande ms"])
+def test_campo_grande_is_recognised_in_common_spellings(box, city):
+    result, _ = call(box, "calcular_compra", itens=[{"produto_id": 116, "quantidade": 1}], cidade=city)
+    assert result["frete"] == "R$ 35,00"
+
+
+def test_a_similar_city_name_is_another_city(box):
+    result, _ = call(box, "calcular_compra", itens=[{"produto_id": 116, "quantidade": 1}], cidade="Campo Grandeza")
+    assert "total_com_frete" not in result

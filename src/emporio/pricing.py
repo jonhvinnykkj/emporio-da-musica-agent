@@ -50,11 +50,6 @@ class Quote:
     def has_promotion(self) -> bool:
         return self.promotion is not None
 
-    @property
-    def pix_price(self) -> Decimal | None:
-        """PIX discount does not stack on promotional prices (manual section 6.2)."""
-        return None if self.has_promotion else to_money(self.price * (1 - PIX_DISCOUNT))
-
     def pix_total(self, quantity: int) -> Decimal:
         """Discount the whole line, not each unit, so rounding cannot add cents to a larger order."""
         total = self.price * quantity
